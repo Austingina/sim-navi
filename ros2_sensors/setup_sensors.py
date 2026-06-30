@@ -48,7 +48,7 @@ LIDAR_ROT_RATE = 20.0
 
 CAM_W, CAM_H = 640, 360          # 降分辨率省渲染(原 1280x720，像素量降到 1/4)
 CAM_HFOV_DEG = 110.0             # ZED 大致水平 FOV
-ENABLE_RGB = True                # 是否发布 RGB 图
+ENABLE_RGB = False                # 是否发布 RGB 图
 ENABLE_DEPTH = False             # 是否发布深度图(depth 是独立渲染通道，关掉省 GPU)
 # 相机降频：跳过 N 帧再渲染/发布一次 -> 实际每 (N+1) 帧一次。
 # 这是 Isaac 官方省 GPU 的做法(frameSkipCount 会自动设上游 IsaacSimulationGate.step=N+1，

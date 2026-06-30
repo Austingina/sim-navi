@@ -18,7 +18,6 @@
 │   ├── setup_sensors.py          # Isaac Script Editor：建传感器 + ROS 发布图
 │   ├── setup_control.py          # Isaac Script Editor：建 Articulation 控制图
 │   ├── bringup.launch.py         # 起纯节点（GPS + 控制器）
-│   ├── start_simulation.launch.py# 顶层一键：bringup + RViz
 │   └── r1_pro.rviz
 ├── scene_tools/             # 场景碰撞地图 + 地理配准的离线生成工具
 │   ├── add_collision_to_usdz.py  # 给高斯 usdz 加隐藏碰撞网格 + 焊入 georef
