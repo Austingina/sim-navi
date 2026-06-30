@@ -35,8 +35,8 @@
 
 ## 快速开始
 
-1. Isaac Sim 打开 `scene.usd`，Script Editor 依次跑 `ros2_sensors/setup_sensors.py`、
-   `setup_control.py`，然后 **Play**。
+1. Isaac Sim 打开 `scene.usd`，直接 **Play**（传感器图/控制图已固化在 USD 里，开箱即用；
+   只有改传感器/控制配置时才需重跑 `ros2_sensors/setup_sensors.py` / `setup_control.py`）。
 2. 终端（仓库根目录下）：
    ```bash
    source /opt/ros/jazzy/setup.bash
@@ -59,5 +59,3 @@
 **已提交且关键**：`zhicheng-usdz/lcc-usdz-result/georef.json`（地理配准）、`r1_pro/`（机器人模型）、
 `scene.usd`。拿到上述大资产后放回对应路径，打开 `scene.usd` 即可。
 重新生成带碰撞地图与 georef 的流程见 [`ros2_sensors/README.md` 第 8 节](ros2_sensors/README.md)。
-
-> ⚠️ 私有仓库：`zhicheng-usdz/` 工具源自公司内网 `slam-nav` 项目，重建数据为内部资产，请勿公开。

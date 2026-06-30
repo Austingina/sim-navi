@@ -40,14 +40,19 @@
 
 ## 3. 启动顺序
 
-### 第 1 步：Isaac Sim 里建图（Play 前）
-打开 `../scene.usd`，在 Script Editor 里**依次**粘贴运行：
-1. `setup_sensors.py`  → 建传感器和发布图
-2. `setup_control.py`  → 建控制图
+### 第 1 步：Isaac Sim 打开场景（Play 前）
+打开 `../scene.usd`，直接点 **Play**（务必 Play，否则 `/clock` 不走、TF 会时间外推报错）。
 
-> 这两个脚本里的 `ROBOT_PRIM = "/World/r1_pro_with_gripper"` 要和你 Stage 里的路径一致。
-
-然后点 **Play**（务必 Play，否则 `/clock` 不走、TF 会时间外推报错）。
+> **传感器图和控制图已经固化保存在 `scene.usd` 里**（OmniGraph + 传感器 prim 都是 USD 持久化的），
+> **平时开箱即用，不必再跑 `setup_sensors.py` / `setup_control.py`。**
+>
+> 这两个是**幂等的"建图脚本"**，只在**改配置**时才回去重跑对应那个，跑完记得存 `scene.usd`：
+>
+> | 改了什么 | 重跑 |
+> |---|---|
+> | 传感器（雷达线数 / 相机参数 / 话题名 / TF） | `setup_sensors.py` |
+> | 控制（关节 Drive / 订阅话题 / 运动学） | `setup_control.py` |
+> | 换机器人 prim 路径 / 重新导入机器人 / 图被误删 | 对应脚本（路径要和 Stage 里 `ROBOT_PRIM` 一致） |
 
 ### 第 2 步：一键起 ROS 周边 + 可视化（系统终端，仓库根目录下）
 ```bash
