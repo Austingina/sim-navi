@@ -1,0 +1,56 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== IDE =====
+.vscode/
+.idea/
+
+# ============================================================
+# 大资产：重建/场景数据，远超 GitHub 100MB 限制，不进仓库。
+# 获取或重新生成方式见根 README「资产与数据」一节。
+# （按“路径”排除，避免误伤 r1_pro 机器人模型里的 .obj/.usd）
+# ============================================================
+# 原始重建数据（点云 ply + 网格 obj，~1.2GB）
+/zhicheng/
+
+# 高斯/碰撞 usdz 与中间产物（~3.5GB）
+zhicheng-usdz/lcc-usdz-result/*.usdz
+zhicheng-usdz/mesh-files/
+zhicheng-usdz/zhicheng.usd
+zhicheng-usdz/collision.usdc
+zhicheng-usdz/r1_pro.zip
+zhicheng-usdz/r1_pro/
+
+# 保留地理配准结果（小且关键）——显式取消忽略
+!zhicheng-usdz/lcc-usdz-result/
+!zhicheng-usdz/lcc-usdz-result/georef.json
+
+# ============================================================
+# 上游 slam-nav 仓库遗留、与本项目运行无关的工具脚本/资源
+# （我们的流水线只用 add_collision_to_usdz.py 和 make_georef.py）
+# ============================================================
+zhicheng-usdz/build_env.py
+zhicheng-usdz/build_scene_layers.py
+zhicheng-usdz/build_zhicheng_scene.py
+zhicheng-usdz/bake_color.py
+zhicheng-usdz/import_robot.py
+zhicheng-usdz/h1_teleop.py
+zhicheng-usdz/ros2_camera_right.py
+zhicheng-usdz/ros2_lidar_xt32.py
+zhicheng-usdz/_inspect_cam.py
+zhicheng-usdz/_inspect_stage.py
+zhicheng-usdz/_inspect_warehouse2.py
+zhicheng-usdz/run_isaacsim.sh
+zhicheng-usdz/run_isaacsim_stream.sh
+zhicheng-usdz/cameras.json
+zhicheng-usdz/cfg_args
+zhicheng-usdz/robot.usda
+zhicheng-usdz/zhicheng_scene.usda
+
+# ===== OS =====
+.DS_Store
+Thumbs.db

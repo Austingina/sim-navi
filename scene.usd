@@ -1,0 +1,1426 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            dictionary Front = {
+                double3 position = (5, 0, 0)
+                double radius = 5
+            }
+            dictionary Perspective = {
+                double3 position = (13.998186604901429, 9.195761616790522, 8.857073599381911)
+                double3 target = (3.1404895460058597, -3.2702973066569445, -2.062848526251699)
+            }
+            dictionary Right = {
+                double3 position = (0, -5, 0)
+                double radius = 5
+            }
+            dictionary Top = {
+                double3 position = (0, 0, 5)
+                double radius = 5
+            }
+            string boundCamera = "/OmniverseKit_Persp"
+        }
+        dictionary georef = {
+            int epsg = 32649
+            int utm_zone = 49
+            bool utm_north = 1
+            double offset_x = 801814.1094338207
+            double offset_y = 2499371.9000139288
+            double offset_z = 29.3283
+            double scale = 1
+            string source = "L2Pro/point_cloud.ply"
+            string note = "local + offset = UTM(EPSG:32649); scale=1 表示 1 场景单位=1 UTM 米；与 zhicheng-usdz/lcc-usdz-result/georef.json 同源，gps_publisher.py 自动读取，无需手工标定。"
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./scene.usd"
+        }
+        dictionary renderSettings = {
+        }
+    }
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Xform "r1_pro_with_gripper" (
+        prepend payload = @./r1_pro/r1_pro_with_gripper/r1_pro_with_gripper.usd@
+    )
+    {
+        string isaac:namespace (
+            displayName = "Namespace"
+            doc = "Namespace of the prim in Isaac Sim"
+        )
+        double3 xformOp:translate = (5, 0, -0.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        over "joints"
+        {
+            over "steer_motor_joint1" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 500
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 50000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "wheel_motor_joint1" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 0
+                float drive:angular:physics:targetVelocity = 0
+            }
+
+            over "steer_motor_joint2" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 500
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 50000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "wheel_motor_joint2" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 0
+                float drive:angular:physics:targetVelocity = 0
+            }
+
+            over "steer_motor_joint3" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 500
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 50000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "wheel_motor_joint3" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 0
+                float drive:angular:physics:targetVelocity = 0
+            }
+
+            over "torso_joint1" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "torso_joint2" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "torso_joint3" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "torso_joint4" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_arm_joint1" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_arm_joint2" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_arm_joint3" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_arm_joint4" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_arm_joint5" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_arm_joint6" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_arm_joint7" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "left_gripper_finger_joint1" (
+                prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+            )
+            {
+                float drive:linear:physics:damping = 1000
+                float drive:linear:physics:maxForce = 10000000
+                float drive:linear:physics:stiffness = 100000
+                float drive:linear:physics:targetPosition = 0
+                float state:linear:physics:position = 0
+                float state:linear:physics:velocity = 0
+            }
+
+            over "left_gripper_finger_joint2" (
+                prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+            )
+            {
+                float drive:linear:physics:damping = 1000
+                float drive:linear:physics:maxForce = 10000000
+                float drive:linear:physics:stiffness = 100000
+                float drive:linear:physics:targetPosition = 0
+                float state:linear:physics:position = 0
+                float state:linear:physics:velocity = 0
+            }
+
+            over "right_arm_joint1" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "right_arm_joint2" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "right_arm_joint3" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "right_arm_joint4" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "right_arm_joint5" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "right_arm_joint6" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "right_arm_joint7" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 1000
+                float drive:angular:physics:maxForce = 10000000
+                float drive:angular:physics:stiffness = 100000
+                float drive:angular:physics:targetPosition = 0
+                float state:angular:physics:position = 0
+                float state:angular:physics:velocity = 0
+            }
+
+            over "right_gripper_finger_joint1" (
+                prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+            )
+            {
+                float drive:linear:physics:damping = 1000
+                float drive:linear:physics:maxForce = 10000000
+                float drive:linear:physics:stiffness = 100000
+                float drive:linear:physics:targetPosition = 0
+                float state:linear:physics:position = 0
+                float state:linear:physics:velocity = 0
+            }
+
+            over "right_gripper_finger_joint2" (
+                prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+            )
+            {
+                float drive:linear:physics:damping = 1000
+                float drive:linear:physics:maxForce = 10000000
+                float drive:linear:physics:stiffness = 100000
+                float drive:linear:physics:targetPosition = 0
+                float state:linear:physics:position = 0
+                float state:linear:physics:velocity = 0
+            }
+        }
+
+        over "zed_link"
+        {
+            def Camera "zed_camera"
+            {
+                float2 clippingRange = (0.05, 50)
+                float focalLength = 24
+                float horizontalAperture = 68.5511
+                float verticalAperture = 38.559998
+                token visibility = "invisible"
+                quatd xformOp:orient = (-0.17366676469109674, 0.9848044754357851, -3.4037504363863584e-7, 0.0000018053921931299586)
+                uniform token[] xformOpOrder = ["xformOp:orient"]
+            }
+        }
+
+        over "base_link"
+        {
+            def IsaacImuSensor "imu"
+            {
+                int angularVelocityFilterWidth = 1
+                bool enabled = 1
+                int linearAccelerationFilterWidth = 1
+                int orientationFilterWidth = 1
+                float sensorPeriod = -1
+                quatd xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+
+            def Lidar "mid360"
+            {
+                bool drawLines = 0
+                bool drawPoints = 0
+                bool enabled = 1
+                bool enableSemantics = 0
+                bool highLod = 1
+                float horizontalFov = 360
+                float horizontalResolution = 0.4
+                float maxRange = 40
+                float minRange = 0.1
+                float rotationRate = 20
+                float verticalFov = 59
+                float verticalResolution = 1
+                token visibility = "inherited"
+                quatd xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0.5)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                float yawOffset = 0
+            }
+
+            over "visuals"
+            {
+                token visibility = "inherited"
+            }
+        }
+
+        over "steer_motor_link1"
+        {
+        }
+
+        over "wheel_motor_link1"
+        {
+        }
+
+        over "steer_motor_link2"
+        {
+        }
+
+        over "wheel_motor_link2"
+        {
+        }
+
+        over "steer_motor_link3"
+        {
+        }
+
+        over "wheel_motor_link3"
+        {
+        }
+
+        over "torso_link1"
+        {
+        }
+
+        over "torso_link2"
+        {
+        }
+
+        over "torso_link3"
+        {
+        }
+
+        over "torso_link4"
+        {
+        }
+
+        over "left_arm_base_link"
+        {
+        }
+
+        over "left_arm_link1"
+        {
+        }
+
+        over "left_arm_link2"
+        {
+        }
+
+        over "left_arm_link3"
+        {
+        }
+
+        over "left_arm_link4"
+        {
+        }
+
+        over "left_arm_link5"
+        {
+        }
+
+        over "left_arm_link6"
+        {
+        }
+
+        over "left_arm_link7"
+        {
+        }
+
+        over "left_gripper_link"
+        {
+        }
+
+        over "left_gripper_finger_link1"
+        {
+        }
+
+        over "left_gripper_finger_link2"
+        {
+        }
+
+        over "left_realsense_link"
+        {
+        }
+
+        over "right_arm_base_link"
+        {
+        }
+
+        over "right_arm_link1"
+        {
+        }
+
+        over "right_arm_link2"
+        {
+        }
+
+        over "right_arm_link3"
+        {
+        }
+
+        over "right_arm_link4"
+        {
+        }
+
+        over "right_arm_link5"
+        {
+        }
+
+        over "right_arm_link6"
+        {
+        }
+
+        over "right_arm_link7"
+        {
+        }
+
+        over "right_gripper_link"
+        {
+        }
+
+        over "right_gripper_finger_link1"
+        {
+        }
+
+        over "right_gripper_finger_link2"
+        {
+        }
+
+        over "right_realsense_link"
+        {
+        }
+    }
+
+    def "zhicheng_usd_collision" (
+        prepend payload = @./zhicheng-usdz/lcc-usdz-result/zhicheng-usd-collision.usdz@
+    )
+    {
+    }
+}
+
+def "Render" (
+    hide_in_stage_window = true
+    no_delete = true
+)
+{
+    def "OmniverseKit"
+    {
+        def "HydraTextures" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            def RenderProduct "omni_kit_widget_viewport_ViewportTexture_0" (
+                prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                hide_in_stage_window = true
+                no_delete = true
+            )
+            {
+                rel camera = </OmniverseKit_Persp>
+                token omni:rtx:background:source:texture:textureMode = "repeatMirrored"
+                token omni:rtx:background:source:type = "domeLight"
+                bool omni:rtx:dlss:frameGeneration = 0
+                bool omni:rtx:material:db:nonVisualMaterialCSV:enabled = 0
+                bool omni:rtx:material:db:syncLoads = 1
+                token omni:rtx:post:dlss:execMode = "performance"
+                bool omni:rtx:post:registeredCompositing:invertColorCorrection = 1
+                bool omni:rtx:post:registeredCompositing:invertToneMap = 1
+                bool omni:rtx:pt:lightcache:cached:dontResolveConflicts = 1
+                int omni:rtx:pt:maxSamplesPerLaunch = 2073600
+                int omni:rtx:pt:mgpu:maxPixelsPerRegionExponent = 12
+                color3f omni:rtx:rt:ambientLight:color = (0.1, 0.1, 0.1)
+                bool omni:rtx:rt:demoire = 0
+                bool omni:rtx:rt:ecoMode:enabled
+                bool omni:rtx:rt:lightcache:spatialCache:dontResolveConflicts = 1
+                bool omni:rtx:scene:hydra:materialSyncLoads = 1
+                bool omni:rtx:scene:hydra:mdlMaterialWarmup = 1
+                uint omni:rtx:viewTile:limit = 4294967295
+                rel orderedVars = </Render/Vars/LdrColor>
+                custom bool overrideClipRange = 0
+                uniform int2 resolution = (1280, 720)
+            }
+
+            def RenderProduct "Replicator" (
+                prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                hide_in_stage_window = true
+                no_delete = true
+            )
+            {
+                rel camera = </World/r1_pro_with_gripper/zed_link/zed_camera>
+                custom string ogPostProcessPath = "/Render/OmniverseKit/HydraTextures/Replicator/PostRender"
+                bool omni:rtx:material:db:syncLoads = 1
+                bool omni:rtx:rt:ecoMode:enabled = 0
+                bool omni:rtx:scene:hydra:materialSyncLoads = 1
+                rel orderedVars = [
+                    </Render/Vars/LdrColorSD>,
+                    </Render/Vars/DistanceToImagePlaneSD>,
+                    </Render/Vars/LdrColor>,
+                ]
+                custom bool overrideClipRange = 0
+                uniform int2 resolution = (1280, 720)
+            }
+        }
+    }
+
+    def RenderSettings "OmniverseGlobalRenderSettings" (
+        prepend apiSchemas = ["OmniRtxSettingsGlobalRtAdvancedAPI_1", "OmniRtxSettingsGlobalPtAdvancedAPI_1"]
+        no_delete = true
+    )
+    {
+        rel products = [
+            </Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0>,
+            </Render/OmniverseKit/HydraTextures/Replicator>,
+        ]
+    }
+
+    def "Vars"
+    {
+        def RenderVar "LdrColor" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            uniform string sourceName = "LdrColor"
+        }
+    }
+}
+
+def OmniGraph "ActionGraph_control"
+{
+    token evaluationMode = "Automatic"
+    token evaluator:type = "execution"
+    token fabricCacheBacking = "StageWithoutHistory"
+    int2 fileFormatVersion = (1, 9)
+    token pipelineStage = "pipelineStageSimulation"
+
+    def OmniGraphNode "Tick"
+    {
+        token node:type = "omni.graph.action.OnPlaybackTick"
+        int node:typeVersion = 2
+        custom double outputs:deltaSeconds
+        custom double outputs:frame
+        custom uint outputs:tick (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom double outputs:time
+    }
+
+    def OmniGraphNode "Ctx"
+    {
+        custom uchar inputs:domain_id
+        custom bool inputs:useDomainIDEnvVar
+        token node:type = "isaacsim.ros2.bridge.ROS2Context"
+        int node:typeVersion = 2
+        custom uint64 outputs:context
+    }
+
+    def OmniGraphNode "SubJoint"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_control/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_control/Tick.outputs:tick>
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom string inputs:topicName = "/joint_command"
+        token node:type = "isaacsim.ros2.bridge.ROS2SubscribeJointState"
+        int node:typeVersion = 2
+        custom double[] outputs:effortCommand
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom token[] outputs:jointNames
+        custom double[] outputs:positionCommand
+        custom double outputs:timeStamp
+        custom double[] outputs:velocityCommand
+    }
+
+    def OmniGraphNode "ArtCtrl"
+    {
+        custom double[] inputs:effortCommand
+        prepend double[] inputs:effortCommand.connect = </ActionGraph_control/SubJoint.outputs:effortCommand>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_control/SubJoint.outputs:execOut>
+        custom int[] inputs:jointIndices
+        custom token[] inputs:jointNames
+        prepend token[] inputs:jointNames.connect = </ActionGraph_control/SubJoint.outputs:jointNames>
+        custom double[] inputs:positionCommand
+        prepend double[] inputs:positionCommand.connect = </ActionGraph_control/SubJoint.outputs:positionCommand>
+        custom string inputs:robotPath
+        custom rel inputs:targetPrim = </World/r1_pro_with_gripper/base_link> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom double[] inputs:velocityCommand
+        prepend double[] inputs:velocityCommand.connect = </ActionGraph_control/SubJoint.outputs:velocityCommand>
+        token node:type = "isaacsim.core.nodes.IsaacArticulationController"
+        int node:typeVersion = 1
+    }
+}
+
+def OmniGraph "ActionGraph_robot"
+{
+    token evaluationMode = "Automatic"
+    token evaluator:type = "execution"
+    token fabricCacheBacking = "StageWithoutHistory"
+    int2 fileFormatVersion = (1, 9)
+    token pipelineStage = "pipelineStageSimulation"
+
+    def OmniGraphNode "Tick"
+    {
+        token node:type = "omni.graph.action.OnPlaybackTick"
+        int node:typeVersion = 2
+        custom double outputs:deltaSeconds
+        custom double outputs:frame
+        custom uint outputs:tick (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom double outputs:time
+    }
+
+    def OmniGraphNode "Ctx"
+    {
+        custom uchar inputs:domain_id
+        custom bool inputs:useDomainIDEnvVar
+        token node:type = "isaacsim.ros2.bridge.ROS2Context"
+        int node:typeVersion = 2
+        custom uint64 outputs:context
+    }
+
+    def OmniGraphNode "SimTime"
+    {
+        custom uint64 inputs:referenceTimeDenominator
+        custom int64 inputs:referenceTimeNumerator
+        custom bool inputs:resetOnStop
+        token node:type = "isaacsim.core.nodes.IsaacReadSimulationTime"
+        int node:typeVersion = 1
+        custom double outputs:simulationTime
+    }
+
+    def OmniGraphNode "PubClock"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/clock"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishClock"
+        int node:typeVersion = 1
+    }
+
+    def OmniGraphNode "PubJoint"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom rel inputs:targetPrim = </World/r1_pro_with_gripper/base_link> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/joint_states"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishJointState"
+        int node:typeVersion = 1
+    }
+
+    def OmniGraphNode "Odom"
+    {
+        custom rel inputs:chassisPrim = </World/r1_pro_with_gripper/base_link> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        token node:type = "isaacsim.core.nodes.IsaacComputeOdometry"
+        int node:typeVersion = 1
+        custom vector3d outputs:angularAcceleration
+        custom vector3d outputs:angularVelocity
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom vector3d outputs:globalLinearAcceleration
+        custom vector3d outputs:globalLinearVelocity
+        custom vector3d outputs:linearAcceleration
+        custom vector3d outputs:linearVelocity
+        custom quatd outputs:orientation
+        custom vector3d outputs:position
+    }
+
+    def OmniGraphNode "PubOdom"
+    {
+        custom vector3d inputs:angularVelocity
+        prepend vector3d inputs:angularVelocity.connect = </ActionGraph_robot/Odom.outputs:angularVelocity>
+        custom string inputs:chassisFrameId = "base_link"
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Odom.outputs:execOut>
+        custom vector3d inputs:linearVelocity
+        prepend vector3d inputs:linearVelocity.connect = </ActionGraph_robot/Odom.outputs:linearVelocity>
+        custom string inputs:nodeNamespace
+        custom string inputs:odomFrameId = "odom"
+        custom quatd inputs:orientation
+        prepend quatd inputs:orientation.connect = </ActionGraph_robot/Odom.outputs:orientation>
+        custom vector3d inputs:position
+        prepend vector3d inputs:position.connect = </ActionGraph_robot/Odom.outputs:position>
+        custom bool inputs:publishRawVelocities
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom vector3d inputs:robotFront
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/odom"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishOdometry"
+        int node:typeVersion = 1
+    }
+
+    def OmniGraphNode "PubRawTF"
+    {
+        custom string inputs:childFrameId = "base_link"
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Odom.outputs:execOut>
+        custom string inputs:nodeNamespace
+        custom string inputs:parentFrameId = "odom"
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom quatd inputs:rotation
+        prepend quatd inputs:rotation.connect = </ActionGraph_robot/Odom.outputs:orientation>
+        custom bool inputs:staticPublisher
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
+        custom string inputs:topicName
+        custom vector3d inputs:translation
+        prepend vector3d inputs:translation.connect = </ActionGraph_robot/Odom.outputs:position>
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"
+        int node:typeVersion = 1
+    }
+
+    def OmniGraphNode "PubTF"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        custom string inputs:nodeNamespace
+        custom rel inputs:parentPrim (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom bool inputs:staticPublisher
+        custom rel inputs:targetPrims = </World/r1_pro_with_gripper/base_link> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/tf"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishTransformTree"
+        int node:typeVersion = 1
+    }
+
+    def OmniGraphNode "PubSensorTF"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        custom string inputs:nodeNamespace
+        custom rel inputs:parentPrim = </World/r1_pro_with_gripper/base_link> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom bool inputs:staticPublisher = 1
+        custom rel inputs:targetPrims = [
+            </World/r1_pro_with_gripper/base_link/mid360>,
+            </World/r1_pro_with_gripper/base_link/imu>,
+        ] (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/tf_static"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishTransformTree"
+        int node:typeVersion = 1
+    }
+
+    def OmniGraphNode "PubCamTF"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        custom string inputs:nodeNamespace
+        custom rel inputs:parentPrim = </World/r1_pro_with_gripper/zed_link> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom bool inputs:staticPublisher = 1
+        custom rel inputs:targetPrims = </World/r1_pro_with_gripper/zed_link/zed_camera> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/tf_static"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishTransformTree"
+        int node:typeVersion = 1
+    }
+}
+
+def OmniGraph "ActionGraph_camera"
+{
+    token evaluationMode = "Automatic"
+    token evaluator:type = "execution"
+    token fabricCacheBacking = "StageWithoutHistory"
+    int2 fileFormatVersion = (1, 9)
+    token pipelineStage = "pipelineStageSimulation"
+
+    def OmniGraphNode "Tick"
+    {
+        token node:type = "omni.graph.action.OnPlaybackTick"
+        int node:typeVersion = 2
+        custom double outputs:deltaSeconds
+        custom double outputs:frame
+        custom uint outputs:tick (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom double outputs:time
+    }
+
+    def OmniGraphNode "Ctx"
+    {
+        custom uchar inputs:domain_id
+        custom bool inputs:useDomainIDEnvVar
+        token node:type = "isaacsim.ros2.bridge.ROS2Context"
+        int node:typeVersion = 2
+        custom uint64 outputs:context
+    }
+
+    def OmniGraphNode "RP"
+    {
+        custom rel inputs:cameraPrim = </World/r1_pro_with_gripper/zed_link/zed_camera> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom bool inputs:enabled
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_camera/Tick.outputs:tick>
+        custom uint inputs:height = 720
+        custom uint inputs:width = 1280
+        token node:type = "isaacsim.core.nodes.IsaacCreateRenderProduct"
+        int node:typeVersion = 2
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom token outputs:renderProductPath
+    }
+
+    def OmniGraphNode "Rgb"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_camera/Ctx.outputs:context>
+        custom bool inputs:enabled
+        custom bool inputs:enableSemanticLabels
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_camera/RP.outputs:execOut>
+        custom string inputs:frameId = "zed_camera"
+        custom uint inputs:frameSkipCount
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom token inputs:renderProductPath
+        prepend token inputs:renderProductPath.connect = </ActionGraph_camera/RP.outputs:renderProductPath>
+        custom bool inputs:resetSimulationTimeOnStop
+        custom string inputs:semanticLabelsTopicName
+        custom float2 inputs:stereoOffset
+        custom string inputs:topicName = "/zed/rgb/image_raw"
+        custom token inputs:type = "rgb" (
+            allowedTokens = ["rgb", "depth", "depth_pcl", "instance_segmentation", "semantic_segmentation", "bbox_2d_tight", "bbox_2d_loose", "bbox_3d"]
+        )
+        custom bool inputs:useSystemTime
+        custom token inputs:viewport
+        token node:type = "isaacsim.ros2.bridge.ROS2CameraHelper"
+        int node:typeVersion = 2
+    }
+
+    def OmniGraphNode "Depth"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_camera/Ctx.outputs:context>
+        custom bool inputs:enabled
+        custom bool inputs:enableSemanticLabels
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_camera/RP.outputs:execOut>
+        custom string inputs:frameId = "zed_camera"
+        custom uint inputs:frameSkipCount
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom token inputs:renderProductPath
+        prepend token inputs:renderProductPath.connect = </ActionGraph_camera/RP.outputs:renderProductPath>
+        custom bool inputs:resetSimulationTimeOnStop
+        custom string inputs:semanticLabelsTopicName
+        custom float2 inputs:stereoOffset
+        custom string inputs:topicName = "/zed/depth/image_rect_raw"
+        custom token inputs:type = "depth" (
+            allowedTokens = ["rgb", "depth", "depth_pcl", "instance_segmentation", "semantic_segmentation", "bbox_2d_tight", "bbox_2d_loose", "bbox_3d"]
+        )
+        custom bool inputs:useSystemTime
+        custom token inputs:viewport
+        token node:type = "isaacsim.ros2.bridge.ROS2CameraHelper"
+        int node:typeVersion = 2
+    }
+
+    def OmniGraphNode "Info"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_camera/Ctx.outputs:context>
+        custom bool inputs:enabled
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_camera/RP.outputs:execOut>
+        custom string inputs:frameId = "zed_camera"
+        custom string inputs:frameIdRight
+        custom uint inputs:frameSkipCount
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom token inputs:renderProductPath
+        prepend token inputs:renderProductPath.connect = </ActionGraph_camera/RP.outputs:renderProductPath>
+        custom token inputs:renderProductPathRight
+        custom bool inputs:resetSimulationTimeOnStop
+        custom string inputs:topicName = "/zed/camera_info"
+        custom string inputs:topicNameRight
+        custom bool inputs:useSystemTime
+        token node:type = "isaacsim.ros2.bridge.ROS2CameraInfoHelper"
+        int node:typeVersion = 1
+    }
+}
+
+def OmniGraph "ActionGraph_lidar"
+{
+    token evaluationMode = "Automatic"
+    token evaluator:type = "execution"
+    token fabricCacheBacking = "StageWithoutHistory"
+    int2 fileFormatVersion = (1, 9)
+    token pipelineStage = "pipelineStageSimulation"
+
+    def OmniGraphNode "Tick"
+    {
+        token node:type = "omni.graph.action.OnPlaybackTick"
+        int node:typeVersion = 2
+        custom double outputs:deltaSeconds
+        custom double outputs:frame
+        custom uint outputs:tick (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom double outputs:time
+    }
+
+    def OmniGraphNode "Ctx"
+    {
+        custom uchar inputs:domain_id
+        custom bool inputs:useDomainIDEnvVar
+        token node:type = "isaacsim.ros2.bridge.ROS2Context"
+        int node:typeVersion = 2
+        custom uint64 outputs:context
+    }
+
+    def OmniGraphNode "SimTime"
+    {
+        custom uint64 inputs:referenceTimeDenominator
+        custom int64 inputs:referenceTimeNumerator
+        custom bool inputs:resetOnStop
+        token node:type = "isaacsim.core.nodes.IsaacReadSimulationTime"
+        int node:typeVersion = 1
+        custom double outputs:simulationTime
+    }
+
+    def OmniGraphNode "ReadLidar"
+    {
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_lidar/Tick.outputs:tick>
+        custom rel inputs:lidarPrim = </World/r1_pro_with_gripper/base_link/mid360> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        token node:type = "isaacsim.sensors.physx.IsaacReadLidarPointCloud"
+        int node:typeVersion = 2
+        custom point3f[] outputs:data
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+    }
+
+    def OmniGraphNode "PubPC"
+    {
+        custom uint inputs:bufferSize
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_lidar/Ctx.outputs:context>
+        custom int inputs:cudaDeviceIndex
+        custom point3f[] inputs:data
+        prepend point3f[] inputs:data.connect = </ActionGraph_lidar/ReadLidar.outputs:data>
+        custom uint64 inputs:dataPtr
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_lidar/ReadLidar.outputs:execOut>
+        custom string inputs:frameId = "mid360"
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_lidar/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/mid360/points"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishPointCloud"
+        int node:typeVersion = 1
+    }
+}
+
+def OmniGraph "ActionGraph_imu"
+{
+    token evaluationMode = "Automatic"
+    token evaluator:type = "execution"
+    token fabricCacheBacking = "StageWithoutHistory"
+    int2 fileFormatVersion = (1, 9)
+    token pipelineStage = "pipelineStageSimulation"
+
+    def OmniGraphNode "Tick"
+    {
+        token node:type = "omni.graph.action.OnPlaybackTick"
+        int node:typeVersion = 2
+        custom double outputs:deltaSeconds
+        custom double outputs:frame
+        custom uint outputs:tick (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom double outputs:time
+    }
+
+    def OmniGraphNode "Ctx"
+    {
+        custom uchar inputs:domain_id
+        custom bool inputs:useDomainIDEnvVar
+        token node:type = "isaacsim.ros2.bridge.ROS2Context"
+        int node:typeVersion = 2
+        custom uint64 outputs:context
+    }
+
+    def OmniGraphNode "SimTime"
+    {
+        custom uint64 inputs:referenceTimeDenominator
+        custom int64 inputs:referenceTimeNumerator
+        custom bool inputs:resetOnStop
+        token node:type = "isaacsim.core.nodes.IsaacReadSimulationTime"
+        int node:typeVersion = 1
+        custom double outputs:simulationTime
+    }
+
+    def OmniGraphNode "ReadImu"
+    {
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_imu/Tick.outputs:tick>
+        custom rel inputs:imuPrim = </World/r1_pro_with_gripper/base_link/imu> (
+            customData = {
+                dictionary omni = {
+                    dictionary graph = {
+                        string relType = "target"
+                    }
+                }
+            }
+        )
+        custom bool inputs:readGravity
+        custom bool inputs:useLatestData
+        token node:type = "isaacsim.sensors.physics.IsaacReadIMU"
+        int node:typeVersion = 1
+        custom vector3d outputs:angVel
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        custom vector3d outputs:linAcc
+        custom quatd outputs:orientation
+        custom float outputs:sensorTime
+    }
+
+    def OmniGraphNode "PubImu"
+    {
+        custom vector3d inputs:angularVelocity
+        prepend vector3d inputs:angularVelocity.connect = </ActionGraph_imu/ReadImu.outputs:angVel>
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_imu/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_imu/ReadImu.outputs:execOut>
+        custom string inputs:frameId = "imu"
+        custom vector3d inputs:linearAcceleration
+        prepend vector3d inputs:linearAcceleration.connect = </ActionGraph_imu/ReadImu.outputs:linAcc>
+        custom string inputs:nodeNamespace
+        custom quatd inputs:orientation
+        prepend quatd inputs:orientation.connect = </ActionGraph_imu/ReadImu.outputs:orientation>
+        custom bool inputs:publishAngularVelocity
+        custom bool inputs:publishLinearAcceleration
+        custom bool inputs:publishOrientation
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_imu/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/imu"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishImu"
+        int node:typeVersion = 1
+    }
+}
+
