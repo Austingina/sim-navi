@@ -13,8 +13,8 @@
 
 用法：
   python3 make_georef.py \
-      --ply ../zhicheng/point_cloud/iteration_100/point_cloud.ply \
-      --out lcc-usdz-result/georef.json
+      --ply ../assets/zhicheng/raw_l2pro/point_cloud.ply \
+      --out georef.json
 
 纯标准库实现，无需 numpy / pxr。
 """
@@ -93,9 +93,8 @@ def build_georef(fields):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ply", default=os.path.join(
-        PROJECT_DIR, "..", "zhicheng", "point_cloud", "iteration_100", "point_cloud.ply"))
-    ap.add_argument("--out", default=os.path.join(
-        PROJECT_DIR, "lcc-usdz-result", "georef.json"))
+        PROJECT_DIR, "..", "assets", "zhicheng", "raw_l2pro", "point_cloud.ply"))
+    ap.add_argument("--out", default=os.path.join(PROJECT_DIR, "georef.json"))
     args = ap.parse_args()
 
     if not os.path.isfile(args.ply):

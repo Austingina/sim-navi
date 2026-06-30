@@ -29,7 +29,7 @@
             double offset_z = 29.3283
             double scale = 1
             string source = "L2Pro/point_cloud.ply"
-            string note = "local + offset = UTM(EPSG:32649); scale=1 表示 1 场景单位=1 UTM 米；与 zhicheng-usdz/lcc-usdz-result/georef.json 同源，gps_publisher.py 自动读取，无需手工标定。"
+            string note = "local + offset = UTM(EPSG:32649); scale=1 表示 1 场景单位=1 UTM 米；与 scene_tools/georef.json 同源，gps_publisher.py 自动读取，无需手工标定。"
         }
         dictionary omni_layer = {
             string authoring_layer = "./scene.usd"
@@ -583,7 +583,7 @@ def Xform "World"
     }
 
     def "zhicheng_usd_collision" (
-        prepend payload = @./zhicheng-usdz/lcc-usdz-result/zhicheng-usd-collision.usdz@
+        prepend payload = @./assets/zhicheng/zhicheng-usd-collision.usdz@
     )
     {
     }

@@ -20,10 +20,17 @@
 │   ├── bringup.launch.py         # 起纯节点（GPS + 控制器）
 │   ├── start_simulation.launch.py# 顶层一键：bringup + RViz
 │   └── r1_pro.rviz
-└── zhicheng-usdz/            # 场景碰撞地图 + 地理配准的离线生成工具
-    ├── add_collision_to_usdz.py  # 给高斯 usdz 加隐藏碰撞网格 + 焊入 georef
-    ├── make_georef.py            # 从重建 PLY 提取地理配准 → georef.json
-    └── lcc-usdz-result/georef.json   # 地理配准单一可信源（已提交）
+├── scene_tools/             # 场景碰撞地图 + 地理配准的离线生成工具
+│   ├── add_collision_to_usdz.py  # 给高斯 usdz 加隐藏碰撞网格 + 焊入 georef
+│   ├── make_georef.py            # 从重建 PLY 提取地理配准 → georef.json
+│   └── georef.json               # 地理配准单一可信源（已提交）
+└── assets/                   # 所有大资产，按场景分目录收纳（**未纳入 Git**）
+    └── zhicheng/                     # 一个场景一个文件夹（以后加新场景同理）
+        ├── zhicheng-usd-collision.usdz   # 成品：带碰撞 + georef 的场景（scene.usd 引用）
+        └── raw_l2pro/                    # L2Pro 扫描原始三件套
+            ├── point_cloud.ply              # 点云（含 georef 头信息）
+            ├── zhicheng-usd.obj             # 网格（碰撞体来源）
+            └── zhicheng-usd.usdz            # 原始高斯场景
 ```
 
 ## 环境要求
@@ -48,14 +55,16 @@
 
 ## 资产与数据（**未纳入 Git**）
 
-为避开 GitHub 100MB 限制，以下大文件被 `.gitignore` 排除，需另行获取/生成：
+所有大资产按场景统一放在 `assets/<场景名>/`，被 `.gitignore` 整目录排除，需另行获取/生成
 
 | 路径 | 内容 | 怎么来 |
 |---|---|---|
-| `zhicheng-usdz/lcc-usdz-result/*.usdz` | 高斯场景 + 带碰撞 usdz（~3.3GB） | 原始 usdz 来自重建；带碰撞版由 `add_collision_to_usdz.py` 生成 |
-| `zhicheng/` | 重建原始数据（点云 ply + 网格 obj，~1.2GB） | 来自建图工具 L2Pro |
-| `zhicheng-usdz/mesh-files/`, `zhicheng.usd`, `collision.usdc` | 中间产物 | 生成流程的中间文件 |
+| `assets/zhicheng/zhicheng-usd-collision.usdz` | 成品：带碰撞 + georef 的场景（~1.7GB，`scene.usd` 引用） | 由 `add_collision_to_usdz.py` 生成 |
+| `assets/zhicheng/raw_l2pro/point_cloud.ply` | 点云（含 georef 头信息，~0.9GB） | 来自建图工具 L2Pro |
+| `assets/zhicheng/raw_l2pro/zhicheng-usd.obj` | 网格（碰撞体来源，~0.2GB） | 来自建图工具 L2Pro |
+| `assets/zhicheng/raw_l2pro/zhicheng-usd.usdz` | 原始高斯场景（~1.6GB） | 来自建图工具 L2Pro |
 
-**已提交且关键**：`zhicheng-usdz/lcc-usdz-result/georef.json`（地理配准）、`r1_pro/`（机器人模型）、
-`scene.usd`。拿到上述大资产后放回对应路径，打开 `scene.usd` 即可。
+**已提交且关键**：`scene_tools/georef.json`（地理配准）、`r1_pro/`（机器人模型）、`scene.usd`。
+**最简部署**：只需拿到 `assets/zhicheng/zhicheng-usd-collision.usdz`，放回原路径，打开 `scene.usd` 即可
+（其余 `raw_l2pro/` 三件套仅在需要重新生成碰撞地图时才用）。
 重新生成带碰撞地图与 georef 的流程见 [`ros2_sensors/README.md` 第 8 节](ros2_sensors/README.md)。

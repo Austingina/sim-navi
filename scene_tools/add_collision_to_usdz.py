@@ -2,7 +2,7 @@
 把 mesh-files 里的三角网格作为"碰撞体"加进已有的 3DGS usdz 场景。
 
 背景:
-  lcc-usdz-result/zhicheng-usd.usdz 里只有一个高斯泼溅体 (Volume, 负责好看的画面),
+  assets/zhicheng/raw_l2pro/zhicheng-usd.usdz 里只有一个高斯泼溅体 (Volume, 负责好看的画面),
   没有任何可参与物理的几何。本脚本把同一坐标系下的 OBJ 网格写成一个隐藏的三角网格
   碰撞体, 挂进场景, 重新打包成一个自包含的新 usdz。机器人就能"撞到"环境, 同时看到
   的仍是高斯渲染。
@@ -17,9 +17,9 @@
 
 用法:
   python3 add_collision_to_usdz.py \
-      --in  lcc-usdz-result/zhicheng-usd.usdz \
-      --obj mesh-files/zhicheng-usd.obj \
-      --out lcc-usdz-result/zhicheng-usd-collision.usdz
+      --in  ../assets/zhicheng/raw_l2pro/zhicheng-usd.usdz \
+      --obj ../assets/zhicheng/raw_l2pro/zhicheng-usd.obj \
+      --out ../assets/zhicheng/zhicheng-usd-collision.usdz
 
   --visible          让碰撞网格可见(灰色), 方便首次目视检查它是否和高斯对齐;
                      确认对齐后去掉该参数(默认隐藏), 重新生成即可。
@@ -43,7 +43,7 @@ import make_georef  # 同目录：从 PLY 读取地理配准
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def bake_georef(root_layer, ply_path, out_usdz):
+def bake_georef(root_layer, ply_path):
     """从 PLY 读地理配准，写进根层 customLayerData['georef']，并落 georef.json。
     这样新 usdz 自带“标定结果”，gps_publisher.py 直接读 georef.json，无需手工标定。"""
     if not ply_path or not os.path.isfile(ply_path):
@@ -61,8 +61,9 @@ def bake_georef(root_layer, ply_path, out_usdz):
     }
     layer.customLayerData = cld
     layer.Save()
-    # 2) 落 georef.json，与 usdz 同目录，供 gps_publisher.py / scene.usd 读
-    json_path = os.path.join(os.path.dirname(os.path.abspath(out_usdz)), "georef.json")
+    # 2) 落 georef.json 到工具目录(随仓库跟踪)，供 gps_publisher.py / scene.usd 读。
+    #    成品 usdz 在 gitignore 的 assets/ 下，不能把唯一可信源放那里。
+    json_path = os.path.join(PROJECT_DIR, "georef.json")
     with open(json_path, "w") as f:
         json.dump(georef, f, indent=2, ensure_ascii=False)
     print(f"[georef] 已写入 usdz customLayerData + {os.path.relpath(json_path)} "
@@ -130,14 +131,13 @@ def write_collision_layer(usdc_path, verts, faces, approximation, visible):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="in_usdz",
-                    default=os.path.join(PROJECT_DIR, "lcc-usdz-result", "zhicheng-usd.usdz"))
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "raw_l2pro", "zhicheng-usd.usdz"))
     ap.add_argument("--obj",
-                    default=os.path.join(PROJECT_DIR, "mesh-files", "zhicheng-usd.obj"))
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "raw_l2pro", "zhicheng-usd.obj"))
     ap.add_argument("--out",
-                    default=os.path.join(PROJECT_DIR, "lcc-usdz-result", "zhicheng-usd-collision.usdz"))
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "zhicheng-usd-collision.usdz"))
     ap.add_argument("--ply",
-                    default=os.path.join(PROJECT_DIR, "..", "zhicheng",
-                                         "point_cloud", "iteration_100", "point_cloud.ply"),
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "raw_l2pro", "point_cloud.ply"),
                     help="3DGS PLY，用于自动提取地理配准(offset/epsg/scale)并焊进新 usdz")
     ap.add_argument("--approximation", default="none",
                     choices=["none", "meshSimplification", "convexDecomposition", "convexHull"])
@@ -179,7 +179,7 @@ def main():
 
         # 3.5) 把地理配准(来自 PLY)焊进根层 customLayerData + 落 georef.json
         print("[3.5] 焊入地理配准 georef ...")
-        bake_georef(root_layer, args.ply, args.out)
+        bake_georef(root_layer, args.ply)
 
         # 4) 重新打包成自包含 usdz (跟随依赖, 含 .nurec)
         print(f"[4/4] 重新打包 -> {args.out} (含 1.6GB .nurec, 需要一会儿) ...")

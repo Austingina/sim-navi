@@ -6,7 +6,7 @@ GPS (NavSatFix) 发布节点 —— Isaac Sim 无原生 GPS，这里用机器人
 地理配准全自动、无需手工标定：重建工具(L2Pro)在 point_cloud.ply 头里写好了
     offset(局部原点的真实 UTM 坐标)  epsg 32649(UTM 49N)  scale 1  shift 0
 即「局部坐标 = 真实 UTM 坐标 - offset，尺度=1，轴向与 UTM 对齐」。
-这些由 zhicheng-usdz/make_georef.py 落成 georef.json，本节点启动时自动加载。
+这些由 scene_tools/make_georef.py 落成 georef.json，本节点启动时自动加载。
 
 换算：
     UTM = origin + scale * R(yaw) * odom位移         # origin = offset + spawn
@@ -30,10 +30,10 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from tf2_ros import StaticTransformBroadcaster
 
-# georef.json 默认位置（由 zhicheng-usdz/make_georef.py 从 PLY 生成）
+# georef.json 默认位置（由 scene_tools/make_georef.py 从 PLY 生成）
 _DEFAULT_GEOREF = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "..", "zhicheng-usdz", "lcc-usdz-result", "georef.json"))
+    "..", "scene_tools", "georef.json"))
 
 
 def utm_to_latlon(easting, northing, zone=49, north=True):
@@ -135,7 +135,7 @@ class GpsPublisher(Node):
         if not path or not os.path.isfile(path):
             self.get_logger().warn(
                 f"georef.json 未找到({path})，沿用参数默认值。可运行 "
-                f"zhicheng-usdz/make_georef.py 生成。")
+                f"scene_tools/make_georef.py 生成。")
             return
         try:
             with open(path) as f:

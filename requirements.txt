@@ -1,4 +1,4 @@
-# 离线工具依赖（zhicheng-usdz/ 下的 usdz/georef 生成脚本）。
+# 离线工具依赖（scene_tools/ 下的 usdz/georef 生成脚本）。
 # 也可直接用 Isaac Sim 自带 python（已含 pxr/numpy），则无需 pip 安装。
 #
 # 注意：ROS 端节点（gps_publisher.py / base_controller.py）依赖 rclpy，

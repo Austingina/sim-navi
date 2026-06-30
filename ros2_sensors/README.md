@@ -126,11 +126,11 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 ## 5. GPS 地理对齐 — 全自动，无需标定
 
-重建工具(L2Pro)在 `../zhicheng/point_cloud/iteration_100/point_cloud.ply` 头里写好了配准：
+重建工具(L2Pro)在 `../assets/zhicheng/raw_l2pro/point_cloud.ply` 头里写好了配准：
 `offset`(局部原点的真实 UTM 坐标) + `epsg 32649`(UTM 49N) + `scale 1` + `shift 0`，
 即 **局部坐标 = UTM − offset，尺度=1，轴向对齐 UTM**。
 
-`zhicheng-usdz/make_georef.py` 把它落成单一可信源 `georef.json`，`gps_publisher.py`
+`scene_tools/make_georef.py` 把它落成单一可信源 `georef.json`，`gps_publisher.py`
 启动时自动加载（同样的 georef 也焊进了 `scene.usd` 的 customLayerData）。换算：
 ```
 UTM = origin + scale·R(yaw)·odom位移   (origin = offset + spawn, scale=1, yaw=0)
@@ -165,7 +165,7 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
 - **Mid360 雷达**：用 **PhysX Generic Lidar**（`RangeSensorCreateLidar`），对**物理碰撞体**投射，
   不依赖 RTX 渲染几何 —— 所以**高斯泼溅场景里没碰撞代理的物体扫不到**，
   机器人/地面/有 CollisionAPI 的物体才有点。近似 Mid360：360°×59°、high_lod 多线。
-  想扫到环境，需给场景碰撞代理 mesh 开 CollisionAPI（见 `../zhicheng-usdz/add_collision_to_usdz.py`）。
+  想扫到环境，需给场景碰撞代理 mesh 开 CollisionAPI（见 `../scene_tools/add_collision_to_usdz.py`）。
 - **IMU**：`base_link` 上，topic `/imu`。
 - **GPS**：Isaac 无原生 GPS，用 odom 真值换算（见第 5 节）。
 
@@ -187,27 +187,44 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
 
 ---
 
-## 8. 场景碰撞地图：从 usdz 生成（`../zhicheng-usdz/`）
+## 8. 从 L2Pro 扫描结果生成「带 georef 的碰撞 usdz」
 
-**为什么需要**：高斯泼溅(NuRec)的 `zhicheng-usd.usdz` 里只有一个负责"好看画面"的
+**为什么需要**：L2Pro 给的高斯泼溅(NuRec)`zhicheng-usd.usdz` 里只有一个负责"好看画面"的
 Volume，**没有任何能参与物理的几何**——机器人会直接穿过去。要让机器人能撞墙、走楼道、
-被雷达扫到，得把同坐标系下的三角网格作为**隐藏的碰撞体**挂进场景。
+被雷达扫到，得把同坐标系下的三角网格作为**隐藏的碰撞体**挂进场景；同时把地理配准焊进去。
 
-**原料**（都在 `../zhicheng-usdz/`）：
-| 文件 | 作用 |
-|---|---|
-| `lcc-usdz-result/zhicheng-usd.usdz` | 原始高斯场景（仅画面，1.6GB .nurec） |
-| `mesh-files/zhicheng-usd.obj` | 同坐标系的三角网格（碰撞用） |
-| `../zhicheng/.../point_cloud.ply` | 重建点云，头部带地理配准（offset/epsg/scale） |
+### 8.1 起点：L2Pro 扫描仪的 3 个原始产物
+从扫描仪以及软件中得到：（都是同一坐标系、米制）：
+| L2Pro 产物 | 是什么 | 用途 |
+|---|---|---|
+| `point_cloud.ply` | 3DGS 点云，**头部带地理配准**（offsetx/y/z、epsg 32649、scale 1） | 提取 georef → 经纬度 |
+| `zhicheng-usd.obj` | 三角网格 | 做物理**碰撞体** |
+| `zhicheng-usd.usdz` | 高斯泼溅场景（仅画面，含 ~1.6GB `.nurec`） | 渲染画面 + 重打包底座 |
 
-**生成命令**：
-```bash
-cd zhicheng-usdz
-python3 add_collision_to_usdz.py        # 需 usd-core + numpy（或用 Isaac 自带 python）
-# 产出 lcc-usdz-result/zhicheng-usd-collision.usdz + lcc-usdz-result/georef.json
+### 8.2 放到约定路径
+所有大资产按场景放在仓库根的 `assets/<场景名>/`，脚本默认按此布局找文件。本场景(zhicheng)
+把三个原始文件放到：
+```
+assets/zhicheng/raw_l2pro/point_cloud.ply      # PLY（含 georef 头）
+assets/zhicheng/raw_l2pro/zhicheng-usd.obj     # OBJ（碰撞体来源）
+assets/zhicheng/raw_l2pro/zhicheng-usd.usdz    # 原始高斯 usdz
 ```
 
-**`add_collision_to_usdz.py` 做的 4 步**：
+### 8.3 一条命令：生成带碰撞 + georef 的 usdz
+```bash
+cd scene_tools
+python3 add_collision_to_usdz.py        # 需 usd-core + numpy（或用 Isaac 自带 python）
+```
+产出两样东西：
+- `../assets/zhicheng/zhicheng-usd-collision.usdz` —— **自包含**：高斯画面 + 隐藏碰撞网格 +
+  焊入的 georef（`customLayerData`）。这就是 `scene.usd` 引用的那个文件。
+- `scene_tools/georef.json` —— 地理配准单一可信源（随仓库跟踪），`gps_publisher.py`
+  自动读（见第 5 节）。注意它落在工具目录、不在 gitignore 的 `assets/` 里。
+
+> 地理配准是从 **PLY 头自动提取**的（脚本内部调 `make_georef.py`），**不需要手工标定**。
+> 只想刷新 georef.json、不重打包 usdz：单独跑 `python3 make_georef.py`。
+
+### 8.4 `add_collision_to_usdz.py` 做的 4 步（原理）
 1. 解包原 usdz（本质是 zip），拿到根层 `default.usda` / `gauss.usda` / `.nurec`
 2. 解析 OBJ，写成独立图层 `collision.usdc`：一个 `Mesh`，加 `PhysicsCollisionAPI` +
    `MeshCollisionAPI(approximation=none)`，默认 `visibility=invisible`（不挡画面、只参与物理）
@@ -215,17 +232,18 @@ python3 add_collision_to_usdz.py        # 需 usd-core + numpy（或用 Isaac �
    `customLayerData['georef']` 并落 `georef.json`（见第 5 节，单一可信源）
 4. `UsdUtils.CreateNewUsdzPackage` 跟随依赖（含 1.6GB `.nurec`）重新打包成自包含新 usdz
 
-**常用参数**：
+### 8.5 常用参数
 | 参数 | 说明 |
 |---|---|
 | `--visible` | 让碰撞网格可见（灰色），首次目视检查它和高斯是否对齐；确认后去掉重生成 |
 | `--approximation none` | 默认，原始三角面，静态建筑/可进出房间；面太多卡顿可换 `meshSimplification` |
 | `--obj / --in / --out / --ply` | 自定义输入输出路径，默认即本项目布局 |
 
-**挂进仿真**：`scene.usd` 已用 payload 引用碰撞 usdz（无需额外变换，同坐标系）：
+### 8.6 挂进仿真
+`scene.usd` 已用 payload 引用碰撞 usdz（无需额外变换，同坐标系）：
 ```585:589:scene.usd
     def "zhicheng_usd_collision" (
-        prepend payload = @./zhicheng-usdz/lcc-usdz-result/zhicheng-usd-collision.usdz@
+        prepend payload = @./assets/zhicheng/zhicheng-usd-collision.usdz@
     )
     {
     }

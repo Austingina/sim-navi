@@ -17,7 +17,7 @@ static_transform_publisher**。
   source /opt/ros/jazzy/setup.bash
   ros2 launch ros2_sensors/bringup.launch.py
 
-地理配准(UTM zone/offset/scale)由 georef.json 自动加载（zhicheng-usdz/make_georef.py
+地理配准(UTM zone/offset/scale)由 georef.json 自动加载（scene_tools/make_georef.py
 从 PLY 生成），**无需手工标定**。你通常只需设机器人出生世界坐标：
   ros2 launch .../bringup.launch.py spawn_x:=30.0 spawn_y:=-12.0
 关掉底盘控制器：
