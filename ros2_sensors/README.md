@@ -31,9 +31,10 @@
 | `setup_sensors.py` | Isaac Script Editor | 建相机/雷达/IMU + 各 ROS2 发布图（/clock /odom /tf /joint_states 等） |
 | `setup_control.py` | Isaac Script Editor | 建 Articulation 控制图（订阅 `/joint_command`）+ 配关节 Drive |
 | `base_controller.py` | 系统 ROS2 | swerve 运动学：`/cmd_vel` → `/joint_command` |
+| `isaac_keyboard_teleop.py` | Isaac Script Editor | Isaac 内 WASD 键盘遥控（不经过 ROS teleop） |
 | `gps_publisher.py` | 系统 ROS2 | `/odom` → `/gps/fix`（NavSatFix），自动读 georef.json 精确换算 |
-| `bringup.launch.py` | 系统 ROS2 | 起纯节点：GPS + 控制器（不起 static_transform_publisher） |
-| `start_simulation.launch.py` | 系统 ROS2 | 顶层一键：include bringup + RViz（给人用的入口） |
+| `lidar_self_filter.py` | 系统 ROS2 | 裁掉 mid360 扫到的机身自身点 → `/mid360/points_filtered` |
+| `bringup.launch.py` | 系统 ROS2 | 起纯节点：GPS + 控制器 + 雷达自裁剪（不起 static_transform_publisher） |
 | `r1_pro.rviz` | rviz2 | 可视化配置 |
 
 ---
@@ -42,6 +43,9 @@
 
 ### 第 1 步：Isaac Sim 打开场景（Play 前）
 打开 `../scene.usd`，直接点 **Play**（务必 Play，否则 `/clock` 不走、TF 会时间外推报错）。
+
+> 懒人法：仓库根目录下 `./open_isaac_scene.sh`（加 `--headless` 走 WebRTC 串流），
+> 启动 Isaac Sim 时自动加载 `scene.usd`，省去手动 `File > Open`。
 
 > **传感器图和控制图已经固化保存在 `scene.usd` 里**（OmniGraph + 传感器 prim 都是 USD 持久化的），
 > **平时开箱即用，不必再跑 `setup_sensors.py` / `setup_control.py`。**
@@ -59,26 +63,45 @@
 source /opt/ros/humble/setup.bash
 ros2 launch ros2_sensors/start_simulation.launch.py
 ```
-`start_simulation.launch.py` = `bringup.launch.py`（GPS + swerve 控制器）+ RViz，全带
-`use_sim_time:=true`。可选开关：`spawn_x:=30 spawn_y:=-12`、`with_controller:=false`、`rviz:=false`。
 
 > 只要纯节点（无 GUI，跑导航/无头）用 `ros2 launch ros2_sensors/bringup.launch.py` 即可。
 
-> **机器人/传感器 TF 由 Isaac 侧 `setup_sensors.py` 统一发布**：
-> `odom→base_link`、`base_link→mid360/imu`、`zed_link→zed_camera`。
-> GPS 用 `NavSatFix.frame_id="base_link"`(GPS 传感器所在帧，rviz_satellite 用它锚定瓦片；
-> 填 odom 会让机器人超前底图整段 odom 位移)，`gps_publisher.py` 另发一个
-> `map→odom` 的 static TF（带 georef 旋转，供 rviz_satellite 定向瓦片）——
-> 这是地理配准 TF，天然属于 GPS 节点，不放 Isaac。
-> 所以 launch 里**不起任何 static_transform_publisher**。
+> **机器人/传感器 TF 由 Isaac 侧 `ActionGraph_robot` 统一发布**（`/tf` 上两个节点，职责不同、不重复）：
+> - `PubRawTF`：`odom → base_link`（来自里程计，动态）
+> - `PubTF`：`base_link →` 各子连杆（arms/torso/wheels/zed 等，动态；**必须设 parentPrim=base_link**，否则默认发 `world→base_link` 会和上面冲突）
+> - `PubSensorTF`（`/tf_static`）：`base_link→mid360/imu`
+> - `PubCamTF`（`/tf_static`）：`zed_link→zed_camera`
+> GPS 用 `NavSatFix.frame_id="base_link"`；`gps_publisher.py` 另发 static `map→odom`（georef 旋转）。
 
 ### 第 3 步：可视化（可选，单独开 RViz 时）
-第 2 步用 `start_simulation` 已自动起 RViz。若想单独开：
 ```bash
 rviz2 -d ros2_sensors/r1_pro.rviz --ros-args -p use_sim_time:=true
 ```
 
 ### 第 4 步：开动机器人（键盘遥控）
+
+**方式 A — Isaac 内键盘（推荐试手，不用开 ROS teleop）**
+
+1. 完成第 1 步 Play（场景里已有 `ActionGraph_control` 订阅 `/joint_command`）
+2. 终端起周边节点时**关掉外部底盘控制器**（否则会抢 `/joint_command`）：
+   ```bash
+   ros2 launch ros2_sensors/bringup.launch.py with_controller:=false
+   ```
+3. Isaac：`Window > Script Editor` → 打开 `ros2_sensors/isaac_keyboard_teleop.py` → **Run**
+4. **焦点放在 Isaac 视口**，按键：
+
+| 键 | 作用 |
+|---|---|
+| `W` / `S` | 前进 / 后退 |
+| `A` / `D` | 原地左转 / 右转 |
+| `Q` / `E` | 左横移 / 右横移 |
+| `Space` | 急停 |
+
+停遥控：Script Editor 里执行 `stop_teleop()`。  
+**不要**同时开下面的 ROS `teleop_twist_keyboard` + `base_controller`，会抢控制。
+
+**方式 B — ROS 终端键盘（对接导航栈时用）**
+
 先装键盘遥控包（只需一次）：
 ```bash
 sudo apt install ros-humble-teleop-twist-keyboard
@@ -116,7 +139,8 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 | `/zed/rgb/image_raw` | sensor_msgs/Image | Isaac 相机 |
 | `/zed/depth/image_rect_raw` | sensor_msgs/Image | Isaac 相机 |
 | `/zed/camera_info` | sensor_msgs/CameraInfo | Isaac 相机 |
-| `/mid360/points` | sensor_msgs/PointCloud2 | Isaac PhysX 雷达 |
+| `/mid360/points` | sensor_msgs/PointCloud2 | Isaac PhysX 雷达（含机身自身点） |
+| `/mid360/points_filtered` | sensor_msgs/PointCloud2 | `lidar_self_filter.py`（裁掉机身自身点，RViz 用这个） |
 | `/imu` | sensor_msgs/Imu | Isaac IMU |
 | `/gps/fix` | sensor_msgs/NavSatFix | `gps_publisher.py` |
 | `/cmd_vel` | geometry_msgs/Twist | 你 / 导航栈 |
@@ -133,14 +157,42 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 `scene_tools/make_georef.py` 把它落成单一可信源 `georef.json`，`gps_publisher.py`
 启动时自动加载（同样的 georef 也焊进了 `scene.usd` 的 customLayerData）。换算：
 ```
-UTM = origin + scale·R(yaw)·odom位移   (origin = offset + spawn, scale=1, yaw=0)
+UTM = origin + scale·R(yaw)·odom位移   (origin = offset + scale·R(yaw)·spawn)
 lat, lon = UTM(49N) → WGS84            (闭式公式，无需 pyproj)
 ```
+`yaw`/`scale` 也从 georef 文件读（缺省 yaw=0、scale=1，即旧 `zhicheng` 场景）。
 
 **你通常唯一要设的是机器人出生世界坐标 `spawn_x/spawn_y`**（默认 (5,0)，与 `scene.usd` 一致）：
 ```bash
 ros2 launch .../bringup.launch.py spawn_x:=30 spawn_y:=-12
 ```
+
+### 5.1 换场景（新区域）如何配准 —— 无需出门测 GPS
+若新场景是**已配准旧场景里的一块区域**（如 `zhicheng-square`），不用去 OSM 量真实经纬度，
+直接把新场景对齐到旧场景即可（旧场景那段 UTM 换算是现成的）：
+1. 在**新、旧两个场景**里各读同样 **2~3 个真实地标**的世界 `(x,y)`（Play 后 `ros2 topic echo /odom --once`，
+   世界坐标 = `spawn + odom`；或 Script Editor 读 `base_link` 的 world pose）。
+2. 填进 `scene_tools/align_new_scene.py` 的 `OLD`/`NEW` 列表并跑：
+   ```bash
+   python3 scene_tools/align_new_scene.py
+   ```
+   它用 Umeyama 解「新→旧」的旋转/平移，打印 **fit RMSE**（越小越可信），
+   并写出 `scene_tools/georef_square.json`（含 `yaw_deg`/`offset`/`scale`）。
+3. 把这份 georef（含 `yaw_deg`）**焊进碰撞 usdz**，让配准随资产走（`gps_publisher` 仍读同名
+   json，二者保持一致）：
+   ```bash
+   python3 scene_tools/bake_georef_into_usdz.py \
+       --usdz assets/zhicheng-square/zhicheng-square-collision.usdz \
+       --georef scene_tools/georef_square.json
+   ```
+4. 启动时指定该 georef：
+   ```bash
+   ros2 launch .../bringup.launch.py georef_json:=$PWD/scene_tools/georef_square.json
+   ```
+> `zhicheng-square`：新区域与旧场景**共享原点(平移=0)**，仅绕 Z **转 90°** 对齐 UTM/ENU
+> （之前 GPS 偏方向就是缺这 90°）。scale=1。georef 已焊进 usdz 的 `customLayerData['georef']`，
+> 与 `scene_tools/georef_square.json`、`scene_zhicheng_square.usd` 三处一致。
+> （`align_new_scene.py` 三点实测 ≈91.17°、RMSE≈0.21m，取整用 90°、暂不加平移。）
 换出生点后读新坐标（Play 前在 Script Editor 跑）：
 ```python
 import omni.usd
@@ -178,9 +230,12 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
 | 点云 `width: 0` | RTX/PhysX 之分 + 场景无碰撞几何；本项目已用 PhysX，确认目标物有 CollisionAPI |
 | RViz 点云不显示 | TF `base_link→mid360` 由 setup_sensors 发 `/tf_static`(需重跑最新版)；或 QoS 设 **Best Effort** |
 | `could not transform mid360 to odom` | 重跑最新 `setup_sensors.py`(它发 mid360/imu 的 /tf_static) |
+| TF 树混乱 / `world` 和 `odom` 同时连 `base_link` | Isaac `PubTF` 未设 `parentPrim`（已修：须为 base_link）；Stop→Play 或重开 scene.usd |
+| 雷达扫到机身自身 | PhysX 雷达打所有碰撞体、无法忽略指定 prim(FilteredPairsAPI/rangeOffset 都无效)；用 `lidar_self_filter.py` 裁掉机身足迹→看 `/mid360/points_filtered`，按 RViz 收紧 half_x/half_y/z_min/z_max |
 | 机器人比 OSM 底图超前(走得越远越偏) | `NavSatFix.frame_id` 须是 `base_link` 不是 `odom`(已修)；填 odom 会超前整段 odom 位移 |
 | `Lookup would require extrapolation into the future` | 时间源不一致 → 所有 ROS 节点 + RViz 加 `use_sim_time:=true`，且 Isaac 在 Play |
 | GPS 位置整体平移 | `spawn_x/spawn_y` 没设成机器人真实出生点；offset/scale 由 georef.json 自动加载 |
+| GPS 方向偏(走得越远越歪) | 换了新场景但没重新配准 yaw → 跑 `align_new_scene.py` 生成 `georef_square.json` 并用 `georef_json:=` 指定(见 5.1) |
 | GPS 和高德对不上 | 高德是 GCJ-02，本项目是 WGS-84，用 OSM/谷歌卫星图核对 |
 | `rviz_satellite` 报错/无底图 | 需 `sudo apt install ros-humble-rviz-satellite` + 联网下瓦片 |
 | 机器人穿墙/掉地面 | 场景碰撞 usdz 没生成或没挂进 `scene.usd`（见第 8 节） |

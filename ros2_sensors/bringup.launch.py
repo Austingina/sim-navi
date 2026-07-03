@@ -4,8 +4,9 @@
 Script Editor 里跑 setup_sensors.py / setup_control.py）。
 
 本 launch 只启动**纯 ROS 节点**：
-  - gps_publisher.py   (odom -> /gps/fix，georef 精确换算)
-  - base_controller.py (/cmd_vel -> /joint_command，swerve 运动学，可关)
+  - gps_publisher.py     (odom -> /gps/fix，georef 精确换算)
+  - base_controller.py   (/cmd_vel -> /joint_command，swerve 运动学，可关)
+  - lidar_self_filter.py (裁掉 mid360 机身自身点 -> /mid360/points_filtered，可关)
 全部带 use_sim_time:=true，与 Isaac 的 /clock 对齐，避免 TF 时间外推报错。
 
 TF 全部由 Isaac 侧 setup_sensors.py 统一发布（职责单一，不分散）：
@@ -37,6 +38,11 @@ def generate_launch_description():
     spawn_x = LaunchConfiguration("spawn_x")
     spawn_y = LaunchConfiguration("spawn_y")
     with_controller = LaunchConfiguration("with_controller")
+    with_self_filter = LaunchConfiguration("with_self_filter")
+    georef_json = LaunchConfiguration("georef_json")
+
+    default_georef = os.path.normpath(
+        os.path.join(HERE, "..", "scene_tools", "georef.json"))
 
     return LaunchDescription([
         DeclareLaunchArgument("spawn_x", default_value="63.0",
@@ -45,12 +51,19 @@ def generate_launch_description():
                               description="机器人出生世界坐标 Y"),
         DeclareLaunchArgument("with_controller", default_value="true",
                               description="是否启动 swerve 底盘控制器"),
+        DeclareLaunchArgument("with_self_filter", default_value="true",
+                              description="是否裁掉 mid360 扫到的机身自身点"
+                                          "(发 /mid360/points_filtered)"),
+        DeclareLaunchArgument("georef_json", default_value=default_georef,
+                              description="地理配准文件；换场景传对应的(如 "
+                                          "scene_tools/georef_square.json)"),
 
         # ---- GPS 发布 ----
         ExecuteProcess(
             cmd=["python3", os.path.join(HERE, "gps_publisher.py"),
                  "--ros-args",
                  "-p", "use_sim_time:=true",
+                 "-p", ["georef_json:=", georef_json],
                  "-p", ["spawn_x:=", spawn_x],
                  "-p", ["spawn_y:=", spawn_y]],
             output="screen",
@@ -60,6 +73,14 @@ def generate_launch_description():
         ExecuteProcess(
             condition=IfCondition(with_controller),
             cmd=["python3", os.path.join(HERE, "base_controller.py"),
+                 "--ros-args", "-p", "use_sim_time:=true"],
+            output="screen",
+        ),
+
+        # ---- Mid360 自身点裁剪（可选）-> /mid360/points_filtered ----
+        ExecuteProcess(
+            condition=IfCondition(with_self_filter),
+            cmd=["python3", os.path.join(HERE, "lidar_self_filter.py"),
                  "--ros-args", "-p", "use_sim_time:=true"],
             output="screen",
         ),

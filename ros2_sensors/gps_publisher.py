@@ -107,9 +107,13 @@ class GpsPublisher(Node):
         self.spawn_x = self.get_parameter("spawn_x").value
         self.spawn_y = self.get_parameter("spawn_y").value
         self.spawn_z = self.get_parameter("spawn_z").value
-        # GPS 原点 = PLY offset + 机器人出生世界坐标(spawn)
-        self.origin_e = self.ox + self.spawn_x
-        self.origin_n = self.oy + self.spawn_y
+        # GPS 原点 = offset + scale*R(yaw)*spawn。
+        # spawn 与 odom 同在“新场景世界系”，换算到已配准系时同样要过 yaw/scale，
+        # 否则 yaw≠0 的场景(如新区域相对旧场景转了 ~91°)原点会算偏几米。
+        # 旧场景 yaw=0、scale=1 时退化为 origin = offset + spawn，行为不变。
+        ct0, st0 = math.cos(self.yaw), math.sin(self.yaw)
+        self.origin_e = self.ox + self.scale * (ct0 * self.spawn_x - st0 * self.spawn_y)
+        self.origin_n = self.oy + self.scale * (st0 * self.spawn_x + ct0 * self.spawn_y)
         self.oz = self.oz + self.spawn_z
         self.frame_id = self.get_parameter("frame_id").value
         self.map_frame = self.get_parameter("map_frame").value
@@ -125,7 +129,7 @@ class GpsPublisher(Node):
         la, lo = utm_to_latlon(self.origin_e, self.origin_n, self.zone, self.north)
         self.get_logger().info(
             f"GPS zone={self.zone} scale={self.scale} "
-            f"yaw={self.get_parameter('yaw_deg').value}deg "
+            f"yaw={math.degrees(self.yaw):.4f}deg "
             f"spawn=({self.spawn_x},{self.spawn_y},{self.spawn_z}) "
             f"origin lat/lon=({la:.7f},{lo:.7f}) frame_id={self.frame_id} -> "
             f"{self.get_parameter('fix_topic').value}")
@@ -151,10 +155,13 @@ class GpsPublisher(Node):
         # 仅当用户没有显式覆盖 scale 时采用 georef 里的 scale(本场景=1)
         if self.get_parameter("scale").value == 1.0:
             self.scale = float(g.get("scale", self.scale))
+        # yaw_deg 也可写进 georef(如新区域配准出的 ~91°)；用户没显式传 yaw_deg 时采用它
+        if "yaw_deg" in g and self.get_parameter("yaw_deg").value == 0.0:
+            self.yaw = math.radians(float(g["yaw_deg"]))
         self.get_logger().info(
             f"已加载 georef.json: EPSG=326{self.zone} "
             f"offset=({self.ox},{self.oy},{self.oz}) scale={self.scale} "
-            f"source={g.get('source','?')}")
+            f"yaw={math.degrees(self.yaw):.4f}deg source={g.get('source','?')}")
 
     def _publish_map_to_odom_tf(self):
         """ENU map 帧 -> odom（yaw_deg 旋转），供 rviz_satellite 定向卫星瓦片。"""
@@ -168,7 +175,7 @@ class GpsPublisher(Node):
         self.tf_static.sendTransform(t)
         self.get_logger().info(
             f"static TF {self.map_frame} -> odom "
-            f"(yaw={self.get_parameter('yaw_deg').value}deg) for rviz_satellite")
+            f"(yaw={math.degrees(self.yaw):.4f}deg) for rviz_satellite")
 
     def on_odom(self, msg: Odometry):
         east = msg.pose.pose.position.x

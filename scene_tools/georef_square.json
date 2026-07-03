@@ -1,0 +1,12 @@
+{
+  "epsg": 32649,
+  "utm_zone": 49,
+  "utm_north": true,
+  "offset_x": 801814.1094338207,
+  "offset_y": 2499371.900013929,
+  "offset_z": 29.32829999923706,
+  "scale": 1.0,
+  "yaw_deg": 90.0,
+  "source": "welded to zhicheng-square usdz (yaw=90, no translation, shares zhicheng origin)",
+  "_note": "新区域与旧场景共享原点(平移=0); 仅绕Z转90度。gps_publisher读yaw_deg并对spawn/odom施加R(yaw)。此文件与usdz customLayerData['georef']一致。"
+}
