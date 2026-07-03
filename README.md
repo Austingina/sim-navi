@@ -11,6 +11,7 @@
 ```
 .
 ├── scene.usd                 # 主场景：引用机器人 + 碰撞 usdz，含 georef 元数据
+├── open_isaac_scene.sh       # 一键启动 Isaac Sim 并直接打开 scene.usd（支持 --headless 串流）
 ├── r1_pro/                   # 机器人资产（URDF / mesh / usd），可直接 clone 即用
 ├── ros2_sensors/             # ROS 2 端：节点 / launch / RViz / 详细 README
 │   ├── gps_publisher.py          # odom → /gps/fix（自动读 georef.json）
@@ -41,12 +42,24 @@
 
 ## 快速开始
 
-1. Isaac Sim 打开 `scene.usd`，直接 **Play**（传感器图/控制图已固化在 USD 里，开箱即用；
-   只有改传感器/控制配置时才需重跑 `ros2_sensors/setup_sensors.py` / `setup_control.py`）。
+1. 启动 Isaac Sim 并直接打开 `scene.usd`，然后点 **Play**（传感器图/控制图已固化在 USD 里，
+   开箱即用；只有改传感器/控制配置时才需重跑 `ros2_sensors/setup_sensors.py` / `setup_control.py`）。
+   - 手动：正常打开 Isaac Sim 后 `File > Open` 选 `scene.usd`；
+   - 一键（推荐）：仓库根目录下 `./open_isaac_scene.sh`，启动即自动加载 `scene.usd`；
+     加 `--headless` 则无头运行（WebRTC 串流，用 Isaac Sim Streaming Client 远程查看）。
+     ```bash
+     ./open_isaac_scene.sh                    # 有窗口
+     ./open_isaac_scene.sh --headless         # 无头 + 串流
+     ./open_isaac_scene.sh /path/to/其它.usd  # 打开别的 usd
+     ```
+     > 原理：`open_isaac_scene.sh` 调 `isaac-sim.sh --/app/file/openPath=<usd 绝对路径>`
+     > 启动时自动打开场景（`--headless` 则换成 `isaac-sim.streaming.sh` 走 WebRTC），
+     > 并顺带跳过一处 RTX 驱动版本误判。若以 root 运行需在脚本命令末尾加 `--allow-root`。
+     > （`scene_tools/run_isaacsim*.sh` 是旧机器留下的同类脚本，路径指向不存在的 `~/isim`，已废弃。）
 2. 终端（仓库根目录下）：
    ```bash
    source /opt/ros/jazzy/setup.bash
-   ros2 launch ros2_sensors/start_simulation.launch.py
+   ros2 launch ros2_sensors/bringup.launch.py
    ```
 3. 键盘遥控：`ros2 run teleop_twist_keyboard teleop_twist_keyboard`
 

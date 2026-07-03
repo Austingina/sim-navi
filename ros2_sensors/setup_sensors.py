@@ -142,6 +142,16 @@ def setup():
     print("[OK] Mid360 PhysX lidar created:", lidar_path,
           stage.GetPrimAtPath(lidar_path).IsValid())
 
+    # ---------- 3b. 关于“雷达扫到机身自身” ----------
+    # 重要：PhysX Generic Lidar 用 PxScene::raycast 打【所有】碰撞体，既没有“忽略某 prim”
+    # 的参数，也【不理会】UsdPhysics.FilteredPairsAPI（那个只屏蔽刚体对之间的接触求解，
+    # 不作用于场景射线查询）。rangeOffset 是 RTX 雷达的参数，PhysX 雷达没有。
+    # 所以自身点只能靠：①调大 min_range 做死区(会连近处真实障碍一起裁掉)，或
+    # ②在下游把“机身所在区域”的点裁掉（ros2_sensors/lidar_self_filter.py，推荐，
+    #   只裁机身足迹、保留其它近点）。这里不再做无效的 FilteredPairsAPI。
+    print("[note] PhysX lidar 无法忽略指定 prim；机身自身点请用下游 "
+          "lidar_self_filter.py 裁剪(见 README)，或调大 LIDAR_MIN_RANGE。")
+
     # ---------- 4. /clock + 机器人状态 (joint_states / odom / tf) ----------
     og.Controller.edit(
         {"graph_path": "/ActionGraph_robot", "evaluator_name": "execution"},
@@ -169,6 +179,10 @@ def setup():
                 ("PubOdom.inputs:chassisFrameId", "base_link"),
                 ("PubRawTF.inputs:parentFrameId", "odom"),
                 ("PubRawTF.inputs:childFrameId", "base_link"),
+                # PubTF 必须设 parentPrim=base_link，否则默认相对 world 发 world->base_link，
+                # 与上面 PubRawTF 的 odom->base_link 冲突（/tf 两套父帧抢 base_link）。
+                # 设 parentPrim 后只发 base_link->(arms/torso/wheels/zed 等子连杆)。
+                ("PubTF.inputs:parentPrim", Sdf.Path(BASE_LINK)),
                 ("PubTF.inputs:topicName", "/tf"),
                 ("PubTF.inputs:targetPrims", [Sdf.Path(BASE_LINK)]),
                 ("PubSensorTF.inputs:topicName", "/tf_static"),
