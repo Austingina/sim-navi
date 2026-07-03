@@ -2,7 +2,7 @@
 # 也可直接用 Isaac Sim 自带 python（已含 pxr/numpy），则无需 pip 安装。
 #
 # 注意：ROS 端节点（gps_publisher.py / base_controller.py）依赖 rclpy，
-# 它来自 ROS 2 Jazzy（apt 安装 + source /opt/ros/jazzy/setup.bash），不在此文件。
+# 它来自 ROS 2 Humble（apt 安装 + source /opt/ros/humble/setup.bash），不在此文件。
 
 usd-core>=23.11
 numpy>=1.24

@@ -14,7 +14,7 @@ TF 全部由 Isaac 侧 setup_sensors.py 统一发布（职责单一，不分散�
 static_transform_publisher**。
 
 用法（在仓库根目录下）：
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/humble/setup.bash
   ros2 launch ros2_sensors/bringup.launch.py
 
 地理配准(UTM zone/offset/scale)由 georef.json 自动加载（scene_tools/make_georef.py
@@ -39,9 +39,9 @@ def generate_launch_description():
     with_controller = LaunchConfiguration("with_controller")
 
     return LaunchDescription([
-        DeclareLaunchArgument("spawn_x", default_value="5.0",
+        DeclareLaunchArgument("spawn_x", default_value="63.0",
                               description="机器人出生世界坐标 X (决定 GPS 原点)"),
-        DeclareLaunchArgument("spawn_y", default_value="0.0",
+        DeclareLaunchArgument("spawn_y", default_value="1.5",
                               description="机器人出生世界坐标 Y"),
         DeclareLaunchArgument("with_controller", default_value="true",
                               description="是否启动 swerve 底盘控制器"),

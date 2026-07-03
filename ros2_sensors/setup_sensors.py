@@ -15,7 +15,7 @@
   - /tf_static：base_link→mid360/imu、zed_link→zed_camera（自动，无需手跑 static_transform_publisher）
 全部用 OmniGraph(Action Graph) 节点，节点类型名对应 Isaac Sim 5.x。
 
-前置：终端先 `source /opt/ros/jazzy/setup.bash` 再启动 Isaac Sim。
+前置：终端先 `source /opt/ros/humble/setup.bash` 再启动 Isaac Sim。
 GPS 单独用 gps_publisher.py（它订阅 odom 转 NavSatFix）。
 """
 import omni.kit.commands

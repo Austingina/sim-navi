@@ -18,7 +18,7 @@ NavSatFix.frame_id 用 base_link（GPS 传感器所在帧）：rviz_satellite �
 填错(如 odom)会让机器人比底图超前整段 odom 位移。
 
 运行：
-  source /opt/ros/jazzy/setup.bash && python3 gps_publisher.py
+  source /opt/ros/humble/setup.bash && python3 gps_publisher.py
 """
 import json
 import math

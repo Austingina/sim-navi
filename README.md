@@ -1,7 +1,7 @@
 # r1_pro × Isaac Sim × ROS 2
 
 在 NVIDIA **Isaac Sim 5.1** 里把 **r1_pro**（swerve 底盘 + 机械臂）放进 3D 高斯泼溅(NuRec)
-重建的真实场景，接入 **ROS 2 (Jazzy)**，打通传感器（RGBD 相机 / Mid360 雷达 / IMU /
+重建的真实场景，接入 **ROS 2 (Humble)**，打通传感器（RGBD 相机 / Mid360 雷达 / IMU /
 真实地理对齐的 GPS）、底盘控制和 RViz 可视化。
 
 > 详细的启动步骤、话题、GPS 原理、碰撞地图生成等，见 **[`ros2_sensors/README.md`](ros2_sensors/README.md)**。
@@ -35,8 +35,8 @@
 ## 环境要求
 
 - **Isaac Sim 5.1**（含 `isaacsim.ros2.bridge`、`omni.nurec`）
-- **ROS 2 Jazzy**：`source /opt/ros/jazzy/setup.bash`，与 Isaac 同一 ROS 网络
-- RViz 卫星底图：`sudo apt install ros-jazzy-rviz-satellite`
+- **ROS 2 Humble**：`source /opt/ros/humble/setup.bash`，与 Isaac 同一 ROS 网络
+- RViz 卫星底图：`sudo apt install ros-humble-rviz-satellite`
 - 离线工具依赖：`pip install -r requirements.txt`（或用 Isaac 自带 python）
 
 ## 快速开始
@@ -45,7 +45,7 @@
    只有改传感器/控制配置时才需重跑 `ros2_sensors/setup_sensors.py` / `setup_control.py`）。
 2. 终端（仓库根目录下）：
    ```bash
-   source /opt/ros/jazzy/setup.bash
+   source /opt/ros/humble/setup.bash
    ros2 launch ros2_sensors/start_simulation.launch.py
    ```
 3. 键盘遥控：`ros2 run teleop_twist_keyboard teleop_twist_keyboard`

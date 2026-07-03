@@ -1,10 +1,10 @@
 # r1_pro × Isaac Sim × ROS 2 接入
 
 在 NVIDIA Isaac Sim 5.1 里把 **r1_pro** 机器人放进高斯泼溅(NuRec)重建场景，
-接入 ROS 2 (Jazzy)，打通**传感器**（RGBD 相机 / Mid360 雷达 / IMU / GPS）、
+接入 ROS 2 (Humble)，打通**传感器**（RGBD 相机 / Mid360 雷达 / IMU / GPS）、
 **底盘控制**（swerve）和**真实地理对齐的 GPS**。
 
-> ROS 端环境：`source /opt/ros/jazzy/setup.bash`，且与 Isaac Sim 同一 ROS 网络。
+> ROS 端环境：`source /opt/ros/humble/setup.bash`，且与 Isaac Sim 同一 ROS 网络。
 > Isaac 端脚本：在 `Window > Script Editor` 里粘贴运行（Play 前）。
 
 ---
@@ -56,7 +56,7 @@
 
 ### 第 2 步：一键起 ROS 周边 + 可视化（系统终端，仓库根目录下）
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 ros2 launch ros2_sensors/start_simulation.launch.py
 ```
 `start_simulation.launch.py` = `bringup.launch.py`（GPS + swerve 控制器）+ RViz，全带
@@ -81,12 +81,12 @@ rviz2 -d ros2_sensors/r1_pro.rviz --ros-args -p use_sim_time:=true
 ### 第 4 步：开动机器人（键盘遥控）
 先装键盘遥控包（只需一次）：
 ```bash
-sudo apt install ros-jazzy-teleop-twist-keyboard
+sudo apt install ros-humble-teleop-twist-keyboard
 ```
 
 新开一个终端，**焦点放在这个终端窗口上**（按键才生效）：
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
@@ -182,7 +182,7 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
 | `Lookup would require extrapolation into the future` | 时间源不一致 → 所有 ROS 节点 + RViz 加 `use_sim_time:=true`，且 Isaac 在 Play |
 | GPS 位置整体平移 | `spawn_x/spawn_y` 没设成机器人真实出生点；offset/scale 由 georef.json 自动加载 |
 | GPS 和高德对不上 | 高德是 GCJ-02，本项目是 WGS-84，用 OSM/谷歌卫星图核对 |
-| `rviz_satellite` 报错/无底图 | 需 `sudo apt install ros-jazzy-rviz-satellite` + 联网下瓦片 |
+| `rviz_satellite` 报错/无底图 | 需 `sudo apt install ros-humble-rviz-satellite` + 联网下瓦片 |
 | 机器人穿墙/掉地面 | 场景碰撞 usdz 没生成或没挂进 `scene.usd`（见第 8 节） |
 
 ---

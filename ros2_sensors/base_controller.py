@@ -15,8 +15,8 @@ Isaac 没有 swerve 控制节点，这里用标准 swerve 运动学：
     velocity = [0,0,0, wheel..., 0,0,...]    # 轮关节用速度
 （steer/arm/torso=位置驱动, wheel=速度驱动；未操控关节持续发保持位，避免晃动。）
 
-运行（系统 ROS2 Jazzy）：
-    source /opt/ros/jazzy/setup.bash
+运行（系统 ROS2 Humble）：
+    source /opt/ros/humble/setup.bash
     python3 base_controller.py
     # 键盘遥控: ros2 run teleop_twist_keyboard teleop_twist_keyboard
 """
