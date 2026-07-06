@@ -7,8 +7,8 @@
 #   ./open_isaac_scene.sh /path/to/x.usd --headless
 set -e
 
-ISAAC_DIR="/home/ai-sz-a26317-u1/isaac_sim/isaac-sim-standalone-5.1.0-linux-x86_64"
-SCENE="/home/ai-sz-a26317-u1/robot_data/scene.usd"
+ISAAC_DIR="/home/navi/isim/"
+SCENE="/home/navi/work/slam-nav/scene.usd"
 HEADLESS=false
 
 for arg in "$@"; do
