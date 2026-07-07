@@ -150,7 +150,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 ## 5. GPS 地理对齐 — 全自动，无需标定
 
-重建工具(L2Pro)在 `../assets/zhicheng/raw_l2pro/point_cloud.ply` 头里写好了配准：
+重建工具(L2Pro)在 `../assets/zhichengAB/PLY/point_cloud/iteration_100/point_cloud.ply` 头里写好了配准：
 `offset`(局部原点的真实 UTM 坐标) + `epsg 32649`(UTM 49N) + `scale 1` + `shift 0`，
 即 **局部坐标 = UTM − offset，尺度=1，轴向对齐 UTM**。
 
@@ -160,7 +160,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 UTM = origin + scale·R(yaw)·odom位移   (origin = offset + scale·R(yaw)·spawn)
 lat, lon = UTM(49N) → WGS84            (闭式公式，无需 pyproj)
 ```
-`yaw`/`scale` 也从 georef 文件读（缺省 yaw=0、scale=1，即旧 `zhicheng` 场景）。
+`yaw`/`scale` 也从 georef 文件读（缺省 yaw=0、scale=1，即 `zhichengAB` 场景）。
 
 **你通常唯一要设的是机器人出生世界坐标 `spawn_x/spawn_y`**（默认 (5,0)，与 `scene.usd` 一致）：
 ```bash
@@ -244,7 +244,7 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
 
 ## 8. 从 L2Pro 扫描结果生成「带 georef 的碰撞 usdz」
 
-**为什么需要**：L2Pro 给的高斯泼溅(NuRec)`zhicheng-usd.usdz` 里只有一个负责"好看画面"的
+**为什么需要**：L2Pro 给的高斯泼溅(NuRec)`zhichengAB.usdz` 里只有一个负责"好看画面"的
 Volume，**没有任何能参与物理的几何**——机器人会直接穿过去。要让机器人能撞墙、走楼道、
 被雷达扫到，得把同坐标系下的三角网格作为**隐藏的碰撞体**挂进场景；同时把地理配准焊进去。
 
@@ -253,16 +253,16 @@ Volume，**没有任何能参与物理的几何**——机器人会直接穿过�
 | L2Pro 产物 | 是什么 | 用途 |
 |---|---|---|
 | `point_cloud.ply` | 3DGS 点云，**头部带地理配准**（offsetx/y/z、epsg 32649、scale 1） | 提取 georef → 经纬度 |
-| `zhicheng-usd.obj` | 三角网格 | 做物理**碰撞体** |
-| `zhicheng-usd.usdz` | 高斯泼溅场景（仅画面，含 ~1.6GB `.nurec`） | 渲染画面 + 重打包底座 |
+| `zhichengAB.obj` | 三角网格 | 做物理**碰撞体** |
+| `zhichengAB.usdz` | 高斯泼溅场景（仅画面，含 ~1.6GB `.nurec`） | 渲染画面 + 重打包底座 |
 
 ### 8.2 放到约定路径
-所有大资产按场景放在仓库根的 `assets/<场景名>/`，脚本默认按此布局找文件。本场景(zhicheng)
-把三个原始文件放到：
+所有大资产按场景放在仓库根的 `assets/<场景名>/`，脚本默认按此布局找文件。本场景(zhichengAB)
+的原始文件路径：
 ```
-assets/zhicheng/raw_l2pro/point_cloud.ply      # PLY（含 georef 头）
-assets/zhicheng/raw_l2pro/zhicheng-usd.obj     # OBJ（碰撞体来源）
-assets/zhicheng/raw_l2pro/zhicheng-usd.usdz    # 原始高斯 usdz
+assets/zhichengAB/PLY/point_cloud/iteration_100/point_cloud.ply   # PLY（含 georef 头）
+assets/zhichengAB/mesh-files/zhichengAB.obj                       # OBJ（碰撞体来源）
+assets/zhichengAB/lcc-usdz-result/zhichengAB.usdz                 # 原始高斯 usdz
 ```
 
 ### 8.3 一条命令：生成带碰撞 + georef 的 usdz
@@ -271,7 +271,7 @@ cd scene_tools
 python3 add_collision_to_usdz.py        # 需 usd-core + numpy（或用 Isaac 自带 python）
 ```
 产出两样东西：
-- `../assets/zhicheng/zhicheng-usd-collision.usdz` —— **自包含**：高斯画面 + 隐藏碰撞网格 +
+- `../assets/zhichengAB/zhichengAB-collision.usdz` —— **自包含**：高斯画面 + 隐藏碰撞网格 +
   焊入的 georef（`customLayerData`）。这就是 `scene.usd` 引用的那个文件。
 - `scene_tools/georef.json` —— 地理配准单一可信源（随仓库跟踪），`gps_publisher.py`
   自动读（见第 5 节）。注意它落在工具目录、不在 gitignore 的 `assets/` 里。
@@ -296,9 +296,9 @@ python3 add_collision_to_usdz.py        # 需 usd-core + numpy（或用 Isaac �
 
 ### 8.6 挂进仿真
 `scene.usd` 已用 payload 引用碰撞 usdz（无需额外变换，同坐标系）：
-```585:589:scene.usd
-    def "zhicheng_usd_collision" (
-        prepend payload = @./assets/zhicheng/zhicheng-usd-collision.usdz@
+```610:614:scene.usd
+    def "zhichengAB_collision" (
+        prepend payload = @./assets/zhichengAB/zhichengAB-collision.usdz@
     )
     {
     }

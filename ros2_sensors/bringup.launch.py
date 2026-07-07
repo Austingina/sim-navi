@@ -45,9 +45,9 @@ def generate_launch_description():
         os.path.join(HERE, "..", "scene_tools", "georef.json"))
 
     return LaunchDescription([
-        DeclareLaunchArgument("spawn_x", default_value="63.0",
+        DeclareLaunchArgument("spawn_x", default_value="0.0",
                               description="机器人出生世界坐标 X (决定 GPS 原点)"),
-        DeclareLaunchArgument("spawn_y", default_value="1.5",
+        DeclareLaunchArgument("spawn_y", default_value="0.0",
                               description="机器人出生世界坐标 Y"),
         DeclareLaunchArgument("with_controller", default_value="true",
                               description="是否启动 swerve 底盘控制器"),

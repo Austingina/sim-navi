@@ -32,7 +32,7 @@ SCENE_DIR="$(dirname "$SCENE")"
 if grep -q 'zhicheng-square-collision.usdz' "$SCENE" 2>/dev/null; then
     USDZ="$SCENE_DIR/assets/zhicheng-square/zhicheng-square-collision.usdz"
 else
-    USDZ="$SCENE_DIR/assets/zhicheng/zhicheng-usd-collision.usdz"
+    USDZ="$SCENE_DIR/assets/zhichengAB/zhichengAB-collision.usdz"
 fi
 if [ ! -f "$USDZ" ]; then
     echo "WARN: 场景依赖的碰撞 usdz 不存在: $USDZ" >&2

@@ -2,7 +2,7 @@
 把 mesh-files 里的三角网格作为"碰撞体"加进已有的 3DGS usdz 场景。
 
 背景:
-  assets/zhicheng/raw_l2pro/zhicheng-usd.usdz 里只有一个高斯泼溅体 (Volume, 负责好看的画面),
+  assets/zhichengAB/lcc-usdz-result/zhichengAB.usdz 里只有一个高斯泼溅体 (Volume, 负责好看的画面),
   没有任何可参与物理的几何。本脚本把同一坐标系下的 OBJ 网格写成一个隐藏的三角网格
   碰撞体, 挂进场景, 重新打包成一个自包含的新 usdz。机器人就能"撞到"环境, 同时看到
   的仍是高斯渲染。
@@ -17,9 +17,9 @@
 
 用法:
   python3 add_collision_to_usdz.py \
-      --in  ../assets/zhicheng/raw_l2pro/zhicheng-usd.usdz \
-      --obj ../assets/zhicheng/raw_l2pro/zhicheng-usd.obj \
-      --out ../assets/zhicheng/zhicheng-usd-collision.usdz
+      --in  ../assets/zhichengAB/lcc-usdz-result/zhichengAB.usdz \
+      --obj ../assets/zhichengAB/mesh-files/zhichengAB.obj \
+      --out ../assets/zhichengAB/zhichengAB-collision.usdz
 
   --visible          让碰撞网格可见(灰色), 方便首次目视检查它是否和高斯对齐;
                      确认对齐后去掉该参数(默认隐藏), 重新生成即可。
@@ -131,13 +131,13 @@ def write_collision_layer(usdc_path, verts, faces, approximation, visible):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="in_usdz",
-                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "raw_l2pro", "zhicheng-usd.usdz"))
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhichengAB", "lcc-usdz-result", "zhichengAB.usdz"))
     ap.add_argument("--obj",
-                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "raw_l2pro", "zhicheng-usd.obj"))
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhichengAB", "mesh-files", "zhichengAB.obj"))
     ap.add_argument("--out",
-                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "zhicheng-usd-collision.usdz"))
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhichengAB", "zhichengAB-collision.usdz"))
     ap.add_argument("--ply",
-                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhicheng", "raw_l2pro", "point_cloud.ply"),
+                    default=os.path.join(PROJECT_DIR, "..", "assets", "zhichengAB", "PLY", "point_cloud", "iteration_100", "point_cloud.ply"),
                     help="3DGS PLY，用于自动提取地理配准(offset/epsg/scale)并焊进新 usdz")
     ap.add_argument("--approximation", default="none",
                     choices=["none", "meshSimplification", "convexDecomposition", "convexHull"])

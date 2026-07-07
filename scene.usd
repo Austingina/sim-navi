@@ -7,8 +7,8 @@
                 double radius = 5
             }
             dictionary Perspective = {
-                double3 position = (23.54149848556869, 23.55438290579089, 22.084085931892783)
-                double3 target = (20.44938249289541, 6.5799964740302705, 7.3061340583902314)
+                double3 position = (16.587293722147304, 25.79481761847672, 22.99308477291375)
+                double3 target = (13.315671040733847, 7.835016697420993, 7.357228081655453)
             }
             dictionary Right = {
                 double3 position = (0, -5, 0)
@@ -23,9 +23,9 @@
         dictionary georef = {
             int epsg = 32649
             string note = "local + offset = UTM(EPSG:32649); scale=1 表示 1 场景单位=1 UTM 米；与 scene_tools/georef.json 同源，gps_publisher.py 自动读取，无需手工标定。"
-            double offset_x = 801814.1094338207
-            double offset_y = 2499371.900013929
-            double offset_z = 29.3283
+            double offset_x = 801822.9534902335
+            double offset_y = 2499372.650084596
+            double offset_z = 30.126199998892844
             double scale = 1
             string source = "L2Pro/point_cloud.ply"
             bool utm_north = 1
@@ -52,7 +52,7 @@ def Xform "World"
             displayName = "Namespace"
             doc = "Namespace of the prim in Isaac Sim"
         )
-        double3 xformOp:translate = (5, 0, -0.5)
+        double3 xformOp:translate = (5.000000074505806, 0, -0.5)
         uniform token[] xformOpOrder = ["xformOp:translate"]
 
         over "joints"
@@ -607,8 +607,8 @@ def Xform "World"
         }
     }
 
-    def "zhicheng_usd_collision" (
-        prepend payload = @./assets/zhicheng/zhicheng-usd-collision.usdz@
+    def "zhichengAB_collision" (
+        prepend payload = @./assets/zhichengAB/zhichengAB-collision.usdz@
     )
     {
     }
