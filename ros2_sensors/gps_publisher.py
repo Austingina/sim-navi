@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GPS (NavSatFix) 发布节点 —— Isaac Sim 无原生 GPS，这里用机器人里程计真值位姿
-换算成经纬度。订阅 /odom，发布 /gps/fix。
+换算成经纬度。订阅 /odom_gt（Isaac 真值里程计），发布 /gps/fix。
 
 地理配准全自动、无需手工标定：重建工具(L2Pro)在 point_cloud.ply 头里写好了
     offset(局部原点的真实 UTM 坐标)  epsg 32649(UTM 49N)  scale 1  shift 0
@@ -14,6 +14,8 @@ GPS (NavSatFix) 发布节点 —— Isaac Sim 无原生 GPS，这里用机器人
 本场景 scale=1、yaw=0；通常你只需设 spawn_x/spawn_y(机器人出生世界坐标)。
 
 另发静态 TF map -> odom（ENU 对齐）供 rviz_satellite 定向瓦片。
+（可用参数 publish_map_odom_tf:=false 关掉这条 TF——跑 FAST-LIO 等自带 map/odom 帧
+的定位栈时建议关，避免抢 odom 父帧；关掉后仍订阅 /odom_gt、仍发 /gps/fix。）
 NavSatFix.frame_id 用 base_link（GPS 传感器所在帧）：rviz_satellite 用它锚定瓦片，
 填错(如 odom)会让机器人比底图超前整段 odom 位移。
 
@@ -90,11 +92,15 @@ class GpsPublisher(Node):
         self.declare_parameter("spawn_y", 0.0)
         self.declare_parameter("spawn_z", 0.0)
         # 通用
-        self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("odom_topic", "/odom_gt")
         self.declare_parameter("fix_topic", "/gps/fix")
         self.declare_parameter("frame_id", "base_link")        # GPS 传感器所在帧(勿填 odom)
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("noise_std_m", 0.0)
+        # 是否发布 map->odom 静态 TF（仅供 rviz_satellite 给卫星瓦片定向）。
+        # 跑 FAST-LIO / 自带 map、odom 帧的定位栈时关掉它，避免和别人抢 odom 的父帧；
+        # 关掉后本节点只订阅 /odom_gt、只发 /gps/fix，定位数值不受影响。
+        self.declare_parameter("publish_map_odom_tf", True)
 
         self.yaw = math.radians(self.get_parameter("yaw_deg").value)
         self.scale = self.get_parameter("scale").value
@@ -119,12 +125,19 @@ class GpsPublisher(Node):
         self.map_frame = self.get_parameter("map_frame").value
         self.noise = self.get_parameter("noise_std_m").value
 
+        self.publish_map_odom_tf = self.get_parameter("publish_map_odom_tf").value
+
         self.pub = self.create_publisher(
             NavSatFix, self.get_parameter("fix_topic").value, 10)
         self.sub = self.create_subscription(
             Odometry, self.get_parameter("odom_topic").value, self.on_odom, 10)
-        self.tf_static = StaticTransformBroadcaster(self)
-        self._publish_map_to_odom_tf()
+        if self.publish_map_odom_tf:
+            self.tf_static = StaticTransformBroadcaster(self)
+            self._publish_map_to_odom_tf()
+        else:
+            self.get_logger().info(
+                "map->odom 静态 TF 已关闭 (publish_map_odom_tf=false)，"
+                "只保留订阅 /odom_gt 与发布 /gps/fix。")
 
         la, lo = utm_to_latlon(self.origin_e, self.origin_n, self.zone, self.north)
         self.get_logger().info(

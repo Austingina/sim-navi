@@ -5,12 +5,29 @@
 #   - ld.so: _dl_allocate_tls_init assertion (LD_LIBRARY_PATH / conda 库混入导致 TLS 崩溃)
 #
 # 用法:
-#   ~/Downloads/25f2/run_isaacsim.sh                 # 打开空白 Isaac Sim
-#   ~/Downloads/25f2/run_isaacsim.sh 智城25楼_env.usd  # 直接打开生成的环境
+#   run_isaacsim.sh                      # GUI 打开空白 Isaac Sim
+#   run_isaacsim.sh scene.usd            # GUI 打开指定场景
+#   run_isaacsim.sh --stream scene.usd   # 无头 + WebRTC 串流(远程 Streaming Client 连, 手动 Play)
+#   run_isaacsim.sh --headless scene.usd # 纯无头(无渲染窗口)+ 自动 Play, 只走 ROS(最省 GPU)
+#
+# 两种无头的区别:
+#   --stream   : 仍渲染并编码画面给 WebRTC, 能远程看; 需在 Streaming Client 里点 Play。
+#   --headless : 完全不开窗口/不渲染视口, 脚本自动 Play, 话题立刻开始发; 看不到画面,
+#                靠 rviz/ROS 观察(适合"太卡"的场景)。
 
 set -e
 
 ISAAC_DIR="$HOME/isim"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 解析可选的模式开关(必须放在第一个参数): --gui(默认) / --stream / --headless
+MODE="gui"
+case "${1:-}" in
+    --gui)                  MODE="gui";      shift ;;
+    --stream|--streaming)   MODE="stream";   shift ;;
+    --headless|--no-window) MODE="headless"; shift ;;
+    --probe)                MODE="probe";    shift ;;   # 用和 --headless 相同的干净环境跑 perf_probe.py
+esac
 
 # 1) 退出 conda（base 会污染 PATH / 库）
 if [[ -n "$CONDA_PREFIX" ]]; then
@@ -30,12 +47,13 @@ unset PYTHONPATH
 #      这里只加回 bridge 扩展自带的 humble 库目录（干净，不引入系统 ROS，避免 TLS 崩溃）。
 #      注意: 不要在这个脚本里 source /opt/ros/humble/setup.bash，那会重新污染库路径。
 export ROS_DISTRO=humble
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp   # 改 rmw_cyclonedds_cpp 可切 CycloneDDS
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp   # Isaac 自带 FastDDS；cyclonedds 需另装 libcyclonedds.so，否则桥启动失败
 export LD_LIBRARY_PATH="$ISAAC_DIR/exts/isaacsim.ros2.bridge/humble/lib"
 
 # 3) 若当前终端没有 DISPLAY(典型: 从 Windows SSH 进来), 自动指向本机物理 X 桌面。
 #    窗口会出现在 4090 接的物理显示器上, 需要人在那块屏前才能看到/操作。
-if [[ -z "$DISPLAY" ]]; then
+#    仅 GUI 模式需要 DISPLAY; 无头(--stream/--headless)不需要, 跳过。
+if [[ "$MODE" == "gui" && -z "$DISPLAY" ]]; then
     sock=$(ls /tmp/.X11-unix/ 2>/dev/null | grep -E '^X[0-9]+$' | head -1)
     if [[ -n "$sock" ]]; then
         export DISPLAY=":${sock#X}"
@@ -63,7 +81,7 @@ if [[ -n "$TARGET" ]]; then
         if [[ -f "$PWD/$TARGET" ]]; then
             TARGET="$PWD/$TARGET"                                   # 相对当前目录
         else
-            TARGET="$(cd "$(dirname "$0")" && pwd)/$TARGET"         # 退回脚本所在目录
+            TARGET="$SCRIPT_DIR/$TARGET"                            # 退回脚本所在目录
         fi
     fi
     if [[ ! -f "$TARGET" ]]; then
@@ -71,7 +89,34 @@ if [[ -n "$TARGET" ]]; then
     else
         echo "[info] 打开: $TARGET"
     fi
-    exec "$ISAAC_DIR/isaac-sim.sh" "${EXTRA_ARGS[@]}" --/app/file/openPath="$TARGET"
-else
-    exec "$ISAAC_DIR/isaac-sim.sh" "${EXTRA_ARGS[@]}"
 fi
+
+case "$MODE" in
+  headless)
+    # 纯无头 + 自动 Play: 走 standalone python(SimulationApp headless=True), 只发 ROS。
+    echo "[info] 纯无头模式(无渲染窗口, 自动 Play, 只走 ROS)。Ctrl+C 退出。"
+    exec "$ISAAC_DIR/python.sh" "$SCRIPT_DIR/isaac_headless.py" "$TARGET" "${EXTRA_ARGS[@]}"
+    ;;
+  probe)
+    # 性能探针: 与 --headless 完全相同的干净环境(conda 已退、PYTHONPATH 已清、RMW 已配),
+    # 用来做真·同条件对比。跑 A/B/C 三段后自动退出。
+    echo "[info] 探针模式(干净环境, 同 --headless)。跑完自动退出。"
+    exec "$ISAAC_DIR/python.sh" "$SCRIPT_DIR/perf_probe.py" "$TARGET" "${EXTRA_ARGS[@]}"
+    ;;
+  stream)
+    # 无头 + WebRTC 串流: 官方 streaming kit 自带 --no-window。需在 Streaming Client 里 Play。
+    echo "[info] 串流模式(WebRTC)。用 Isaac Sim Streaming Client 连本机 IP, 在客户端点 Play。"
+    if [[ -n "$TARGET" && -f "$TARGET" ]]; then
+        exec "$ISAAC_DIR/isaac-sim.streaming.sh" "${EXTRA_ARGS[@]}" --/app/file/openPath="$TARGET"
+    else
+        exec "$ISAAC_DIR/isaac-sim.streaming.sh" "${EXTRA_ARGS[@]}"
+    fi
+    ;;
+  *)
+    if [[ -n "$TARGET" && -f "$TARGET" ]]; then
+        exec "$ISAAC_DIR/isaac-sim.sh" "${EXTRA_ARGS[@]}" --/app/file/openPath="$TARGET"
+    else
+        exec "$ISAAC_DIR/isaac-sim.sh" "${EXTRA_ARGS[@]}"
+    fi
+    ;;
+esac

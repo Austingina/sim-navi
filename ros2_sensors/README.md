@@ -16,7 +16,7 @@
 | URDF 修复 | 修正 mesh 路径、贴图路径；OBJ(Y-up) 加 `rpy=1.5708 0 0` 对齐 Z-up；涂装改黑 |
 | 场景合成 | `../scene.usd`：引用 NuRec 环境(usdz) + payload 机器人，解决 usdz 自包含引用丢失 |
 | 碰撞 | 导入后给碰撞网格加 `PhysicsCollisionAPI`（机器人）；场景碰撞用单独 collision usdz |
-| 传感器 | `setup_sensors.py`：相机 + PhysX 雷达 + IMU + clock/odom/TF，全部 OmniGraph 发布 |
+| 传感器 | `setup_sensors.py`：相机 + PhysX 雷达 + IMU + clock/odom_gt/TF，全部 OmniGraph 发布 |
 | 控制 | `setup_control.py`(Isaac侧 Articulation 控制图) + `base_controller.py`(swerve 运动学) |
 | GPS | `gps_publisher.py`：odom 真值经 UTM 精确换算成经纬度，和真实地理/OSM 对齐 |
 | 可视化 | `r1_pro.rviz`：点云 / 里程计 / TF / GPS 卫星底图 |
@@ -28,13 +28,14 @@
 
 | 文件 | 跑在哪 | 作用 |
 |---|---|---|
-| `setup_sensors.py` | Isaac Script Editor | 建相机/雷达/IMU + 各 ROS2 发布图（/clock /odom /tf /joint_states 等） |
+| `setup_sensors.py` | Isaac Script Editor | 建相机/雷达/IMU + 各 ROS2 发布图（/clock /odom_gt /tf /joint_states 等） |
 | `setup_control.py` | Isaac Script Editor | 建 Articulation 控制图（订阅 `/joint_command`）+ 配关节 Drive |
 | `base_controller.py` | 系统 ROS2 | swerve 运动学：`/cmd_vel` → `/joint_command` |
 | `isaac_keyboard_teleop.py` | Isaac Script Editor | Isaac 内 WASD 键盘遥控（不经过 ROS teleop） |
-| `gps_publisher.py` | 系统 ROS2 | `/odom` → `/gps/fix`（NavSatFix），自动读 georef.json 精确换算 |
-| `lidar_self_filter.py` | 系统 ROS2 | 裁掉 mid360 扫到的机身自身点 → `/mid360/points_filtered` |
-| `bringup.launch.py` | 系统 ROS2 | 起纯节点：GPS + 控制器 + 雷达自裁剪（不起 static_transform_publisher） |
+| `gps_publisher.py` | 系统 ROS2 | `/odom_gt` → `/gps/fix`（NavSatFix），自动读 georef.json 精确换算 |
+| `lidar_self_filter.py` | 系统 ROS2 | 裁掉雷达扫到的机身自身点：`/livox/lidar_raw` → `/livox/points` |
+| `pc2_to_livox.py` | 系统 ROS2 | `/livox/points`(PointCloud2) → `/livox/lidar`(livox_ros_driver2/CustomMsg) |
+| `bringup.launch.py` | 系统 ROS2 | 起纯节点：GPS + 控制器 + 雷达自裁剪 + CustomMsg 转换（不起 static_transform_publisher） |
 | `r1_pro.rviz` | rviz2 | 可视化配置 |
 
 ---
@@ -66,12 +67,12 @@ ros2 launch ros2_sensors/start_simulation.launch.py
 
 > 只要纯节点（无 GUI，跑导航/无头）用 `ros2 launch ros2_sensors/bringup.launch.py` 即可。
 
-> **机器人/传感器 TF 由 Isaac 侧 `ActionGraph_robot` 统一发布**（`/tf` 上两个节点，职责不同、不重复）：
-> - `PubRawTF`：`odom → base_link`（来自里程计，动态）
-> - `PubTF`：`base_link →` 各子连杆（arms/torso/wheels/zed 等，动态；**必须设 parentPrim=base_link**，否则默认发 `world→base_link` 会和上面冲突）
-> - `PubSensorTF`（`/tf_static`）：`base_link→mid360/imu`
+> **机器人/传感器 TF 由 Isaac 侧 `ActionGraph_robot` 统一发布**：
+> - `PubRawTF`：`odom → base_link`（来自里程计，动态）—— **默认已关**（`setup_sensors.py` 里 `PUBLISH_ODOM_TF=False`），让 FAST-LIO 等定位栈独占 `odom→base_link`，避免 base_link 双父帧冲突。要 Isaac 真值 TF 时改回 `True` 并重跑脚本存盘。`/odom_gt` 话题不受影响，照常发布。
+> - `PubTF`：`base_link →` 各子连杆（arms/torso/wheels/zed 等，动态；**必须设 parentPrim=base_link**，否则默认发 `world→base_link` 会冲突）
+> - `PubSensorTF`（`/tf_static`）：`base_link→livox_frame/imu`
 > - `PubCamTF`（`/tf_static`）：`zed_link→zed_camera`
-> GPS 用 `NavSatFix.frame_id="base_link"`；`gps_publisher.py` 另发 static `map→odom`（georef 旋转）。
+> GPS 用 `NavSatFix.frame_id="base_link"`；`gps_publisher.py` 的 static `map→odom` **默认也关**（`with_gps_map_tf:=false`），跑 FAST-LIO 时不抢 odom 父帧，只在需要卫星图定向时设 `true`。
 
 ### 第 3 步：可视化（可选，单独开 RViz 时）
 ```bash
@@ -134,14 +135,15 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 |---|---|---|
 | `/clock` | rosgraph_msgs/Clock | Isaac |
 | `/joint_states` | sensor_msgs/JointState | Isaac |
-| `/odom` | nav_msgs/Odometry | Isaac |
-| `/tf`, `/tf_static` | tf2_msgs/TFMessage | Isaac(odom→base_link, base_link→mid360/imu, zed_link→zed_camera) + gps_publisher(map→odom) |
+| `/odom_gt` | nav_msgs/Odometry | Isaac（真值里程计；供 GPS/精度对比，非 SLAM 用） |
+| `/tf`, `/tf_static` | tf2_msgs/TFMessage | Isaac(odom→base_link, base_link→livox_frame/imu, zed_link→zed_camera) + gps_publisher(map→odom) |
 | `/zed/rgb/image_raw` | sensor_msgs/Image | Isaac 相机 |
 | `/zed/depth/image_rect_raw` | sensor_msgs/Image | Isaac 相机 |
 | `/zed/camera_info` | sensor_msgs/CameraInfo | Isaac 相机 |
-| `/mid360/points` | sensor_msgs/PointCloud2 | Isaac PhysX 雷达（含机身自身点） |
-| `/mid360/points_filtered` | sensor_msgs/PointCloud2 | `lidar_self_filter.py`（裁掉机身自身点，RViz 用这个） |
-| `/imu` | sensor_msgs/Imu | Isaac IMU |
+| `/livox/lidar_raw` | sensor_msgs/PointCloud2 | Isaac PhysX 雷达（含机身自身点，frame_id=livox_frame） |
+| `/livox/points` | sensor_msgs/PointCloud2 | `lidar_self_filter.py`（裁掉机身自身点，RViz 用这个） |
+| `/livox/lidar` | livox_ros_driver2/CustomMsg | `pc2_to_livox.py`（与真实驱动一致，给 FAST-LIO 等 SLAM） |
+| `/livox/imu` | sensor_msgs/Imu | Isaac IMU（与雷达同帧 livox_frame，供 FAST-LIO） |
 | `/gps/fix` | sensor_msgs/NavSatFix | `gps_publisher.py` |
 | `/cmd_vel` | geometry_msgs/Twist | 你 / 导航栈 |
 | `/joint_command` | sensor_msgs/JointState | `base_controller.py` |
@@ -170,7 +172,7 @@ ros2 launch .../bringup.launch.py spawn_x:=30 spawn_y:=-12
 ### 5.1 换场景（新区域）如何配准 —— 无需出门测 GPS
 若新场景是**已配准旧场景里的一块区域**（如 `zhicheng-square`），不用去 OSM 量真实经纬度，
 直接把新场景对齐到旧场景即可（旧场景那段 UTM 换算是现成的）：
-1. 在**新、旧两个场景**里各读同样 **2~3 个真实地标**的世界 `(x,y)`（Play 后 `ros2 topic echo /odom --once`，
+1. 在**新、旧两个场景**里各读同样 **2~3 个真实地标**的世界 `(x,y)`（Play 后 `ros2 topic echo /odom_gt --once`，
    世界坐标 = `spawn + odom`；或 Script Editor 读 `base_link` 的 world pose）。
 2. 填进 `scene_tools/align_new_scene.py` 的 `OLD`/`NEW` 列表并跑：
    ```bash
@@ -218,7 +220,7 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
   不依赖 RTX 渲染几何 —— 所以**高斯泼溅场景里没碰撞代理的物体扫不到**，
   机器人/地面/有 CollisionAPI 的物体才有点。近似 Mid360：360°×59°、high_lod 多线。
   想扫到环境，需给场景碰撞代理 mesh 开 CollisionAPI（见 `../scene_tools/add_collision_to_usdz.py`）。
-- **IMU**：`base_link` 上，topic `/imu`。
+- **IMU**：与雷达同位置（livox_frame），topic `/livox/imu`。
 - **GPS**：Isaac 无原生 GPS，用 odom 真值换算（见第 5 节）。
 
 ---
@@ -228,10 +230,10 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
 | 现象 | 原因 / 解决 |
 |---|---|
 | 点云 `width: 0` | RTX/PhysX 之分 + 场景无碰撞几何；本项目已用 PhysX，确认目标物有 CollisionAPI |
-| RViz 点云不显示 | TF `base_link→mid360` 由 setup_sensors 发 `/tf_static`(需重跑最新版)；或 QoS 设 **Best Effort** |
-| `could not transform mid360 to odom` | 重跑最新 `setup_sensors.py`(它发 mid360/imu 的 /tf_static) |
+| RViz 点云不显示 | TF `base_link→livox_frame` 由 setup_sensors 发 `/tf_static`(需重跑最新版)；或 QoS 设 **Best Effort** |
+| `could not transform livox_frame to odom` | 重跑最新 `setup_sensors.py`(它发 livox_frame/imu 的 /tf_static) |
 | TF 树混乱 / `world` 和 `odom` 同时连 `base_link` | Isaac `PubTF` 未设 `parentPrim`（已修：须为 base_link）；Stop→Play 或重开 scene.usd |
-| 雷达扫到机身自身 | PhysX 雷达打所有碰撞体、无法忽略指定 prim(FilteredPairsAPI/rangeOffset 都无效)；用 `lidar_self_filter.py` 裁掉机身足迹→看 `/mid360/points_filtered`，按 RViz 收紧 half_x/half_y/z_min/z_max |
+| 雷达扫到机身自身 | PhysX 雷达打所有碰撞体、无法忽略指定 prim(FilteredPairsAPI/rangeOffset 都无效)；用 `lidar_self_filter.py` 裁掉机身足迹→看 `/livox/points`，按 RViz 收紧 half_x/half_y/z_min/z_max |
 | 机器人比 OSM 底图超前(走得越远越偏) | `NavSatFix.frame_id` 须是 `base_link` 不是 `odom`(已修)；填 odom 会超前整段 odom 位移 |
 | `Lookup would require extrapolation into the future` | 时间源不一致 → 所有 ROS 节点 + RViz 加 `use_sim_time:=true`，且 Isaac 在 Play |
 | GPS 位置整体平移 | `spawn_x/spawn_y` 没设成机器人真实出生点；offset/scale 由 georef.json 自动加载 |

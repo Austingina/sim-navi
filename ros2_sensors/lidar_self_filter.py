@@ -9,8 +9,8 @@ prim”的功能，也不理会 UsdPhysics.FilteredPairsAPI。于是雷达会扫
     在 base_link 系里，|x|<=half_x 且 |y|<=half_y 且 z_min<=z<=z_max 的点 = 机身 -> 删除。
 盒子外的点（含近处真实障碍）全部保留 —— 比单纯调大 min_range（各方向一刀切）干净。
 
-坐标换算：雷达 mid360 刚性挂在 base_link 上、无旋转、仅上移 sensor_z（=setup_sensors.py 的
-LIDAR_OFFSET z）。所以 base_link 坐标 = mid360 坐标 +(0,0,sensor_z)，无需查 TF。
+坐标换算：雷达 livox_frame 刚性挂在 base_link 上、无旋转、仅上移 sensor_z（=setup_sensors.py 的
+LIDAR_OFFSET z）。所以 base_link 坐标 = livox_frame 坐标 +(0,0,sensor_z)，无需查 TF。
 
 按 PointCloud2 原始字节做掩码，保留 intensity 等所有字段、不改点结构。
 
@@ -30,14 +30,14 @@ from sensor_msgs.msg import PointCloud2
 class LidarSelfFilter(Node):
     def __init__(self):
         super().__init__("lidar_self_filter")
-        self.declare_parameter("input_topic", "/mid360/points")
-        self.declare_parameter("output_topic", "/mid360/points_filtered")
+        self.declare_parameter("input_topic", "/livox/lidar_raw")
+        self.declare_parameter("output_topic", "/livox/points")
         # 机身包围盒（base_link 系，米）。默认值偏保守，请对着 RViz 收紧。
         self.declare_parameter("half_x", 0.45)     # 机身半长(前后)
         self.declare_parameter("half_y", 0.40)     # 机身半宽(左右)
         self.declare_parameter("z_min", -0.30)     # 机身底(base_link 系)
         self.declare_parameter("z_max", 1.80)      # 机身顶(含立柱/机械臂根部)
-        self.declare_parameter("sensor_z", 0.5)    # mid360 相对 base_link 的安装高度
+        self.declare_parameter("sensor_z", 0.5)    # livox_frame 相对 base_link 的安装高度
 
         self.hx = self.get_parameter("half_x").value
         self.hy = self.get_parameter("half_y").value

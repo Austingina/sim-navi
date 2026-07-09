@@ -10,9 +10,10 @@
 它会创建：
   - zed_link 下一个相机 (Camera prim) + 发布 rgb / camera_info（depth 可选，见 ENABLE_DEPTH）
   - base_link 上方一个 PhysX Generic Lidar (近似 Mid360) + 发布 PointCloud2
-  - base_link 上一个 IMU + 发布 sensor_msgs/Imu
+    到 /livox/lidar_raw (frame_id=livox_frame，与真实 livox_ros_driver2 对齐)
+  - 与雷达同位置一个 IMU + 发布 sensor_msgs/Imu 到 /livox/imu (frame_id=livox_frame)
   - /clock、joint_states、odom、TF 发布
-  - /tf_static：base_link→mid360/imu、zed_link→zed_camera（自动，无需手跑 static_transform_publisher）
+  - /tf_static：base_link→livox_frame/imu、zed_link→zed_camera（自动，无需手跑 static_transform_publisher）
 全部用 OmniGraph(Action Graph) 节点，节点类型名对应 Isaac Sim 5.x。
 
 前置：终端先 `source /opt/ros/humble/setup.bash` 再启动 Isaac Sim。
@@ -30,7 +31,9 @@ BASE_LINK = ROBOT_PRIM + "/base_link"        # PhysX articulation 根 + IMU/Lida
 ZED_LINK = ROBOT_PRIM + "/zed_link"          # 相机挂载 link
 
 CAMERA_PRIM = ZED_LINK + "/zed_camera"   # prim 名须与 ROS frame_id 一致
-LIDAR_PRIM = BASE_LINK + "/mid360"
+# 雷达 prim 名 = ROS frame_id。为与真实 livox_ros_driver2 驱动一致，
+# 用 "livox_frame"（真实驱动点云/IMU 默认 frame 也叫 livox_frame）。
+LIDAR_PRIM = BASE_LINK + "/livox_frame"
 IMU_PRIM = BASE_LINK + "/imu"
 # 注意：GPS 不在这里建 prim。gps_publisher.py 用 NavSatFix.frame_id="odom"
 # 并自己发 map->odom 的 static TF（georef 旋转），无需 base_link->gps。
@@ -46,9 +49,15 @@ LIDAR_H_RES = 0.4    # 水平角分辨率(度)
 LIDAR_V_RES = 1.0    # 垂直角分辨率(度) -> ~59 层
 LIDAR_ROT_RATE = 20.0
 
+# 是否发布 odom->base_link 的真值 TF（PubRawTF）。
+# 跑 FAST-LIO 等自带里程计/定位、由它接管 odom->base_link 时设 False：
+# 否则 base_link 会有两个父帧(Isaac 与 FAST-LIO)，tf2 报 TF_MULTIPLE_AUTHORITY、位姿乱跳。
+# 关掉后 /odom_gt 话题仍照常发布(PubOdom)，只是不再发这条 TF。想要 Isaac 真值 TF 时改回 True。
+PUBLISH_ODOM_TF = False
+
 CAM_W, CAM_H = 640, 360          # 降分辨率省渲染(原 1280x720，像素量降到 1/4)
 CAM_HFOV_DEG = 110.0             # ZED 大致水平 FOV
-ENABLE_RGB = False                # 是否发布 RGB 图
+ENABLE_RGB = True                # 是否发布 RGB 图
 ENABLE_DEPTH = False             # 是否发布深度图(depth 是独立渲染通道，关掉省 GPU)
 # 相机降频：跳过 N 帧再渲染/发布一次 -> 实际每 (N+1) 帧一次。
 # 这是 Isaac 官方省 GPU 的做法(frameSkipCount 会自动设上游 IsaacSimulationGate.step=N+1，
@@ -104,10 +113,13 @@ def setup():
     print("[OK] camera rigidly mounted on zed_link (optical frame, const orient):", CAMERA_PRIM)
 
     # ---------- 2. IMU ----------
-    # 用完整路径 + parent=None；传 parent= 会导致路径被错误拼接
+    # 用完整路径 + parent=None；传 parent= 会导致路径被错误拼接。
+    # 与雷达同位置（LIDAR_OFFSET）安装：真实 Livox Mid-360 的 IMU 就在雷达内部，
+    # 二者共用 livox_frame。这样 FAST-LIO 里 IMU<->LiDAR 外参就是单位阵。
     omni.kit.commands.execute(
         "IsaacSensorCreateImuSensor",
         path=IMU_PRIM, parent=None,
+        translation=Gf.Vec3d(*LIDAR_OFFSET),
         sensor_period=-1.0,
     )
     print("[OK] IMU created:", IMU_PRIM, stage.GetPrimAtPath(IMU_PRIM).IsValid())
@@ -117,7 +129,7 @@ def setup():
     # 不依赖 RTX 渲染几何，因此对高斯泼溅/NuRec 场景里有碰撞的物体也能出点。
     # 这个命令用 get_next_free_path 正确处理 parent，不会像 RTX 那样压平路径。
     for c in list(stage.GetPrimAtPath(BASE_LINK).GetChildren()):
-        if c.GetName() == "mid360":
+        if c.GetName() in ("mid360", "livox_frame"):
             stage.RemovePrim(c.GetPath())
     res = omni.kit.commands.execute(
         "RangeSensorCreateLidar",
@@ -153,81 +165,94 @@ def setup():
           "lidar_self_filter.py 裁剪(见 README)，或调大 LIDAR_MIN_RANGE。")
 
     # ---------- 4. /clock + 机器人状态 (joint_states / odom / tf) ----------
+    # PubRawTF(odom->base_link 真值 TF) 受 PUBLISH_ODOM_TF 开关控制：跑 FAST-LIO 时
+    # 设为 False，让 FAST-LIO 独占 odom->base_link，避免 base_link 双父帧冲突。
+    robot_nodes = [
+        ("Tick", "omni.graph.action.OnPlaybackTick"),
+        ("Ctx", "isaacsim.ros2.bridge.ROS2Context"),
+        ("SimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+        ("PubClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
+        ("PubJoint", "isaacsim.ros2.bridge.ROS2PublishJointState"),
+        ("Odom", "isaacsim.core.nodes.IsaacComputeOdometry"),
+        ("PubOdom", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
+        ("PubTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
+        ("PubSensorTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
+        ("PubCamTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
+    ]
+    robot_values = [
+        ("PubClock.inputs:topicName", "/clock"),
+        ("PubJoint.inputs:topicName", "/joint_states"),
+        ("PubJoint.inputs:targetPrim", [Sdf.Path(BASE_LINK)]),
+        ("Odom.inputs:chassisPrim", [Sdf.Path(BASE_LINK)]),
+        ("PubOdom.inputs:topicName", "/odom_gt"),
+        ("PubOdom.inputs:odomFrameId", "odom"),
+        ("PubOdom.inputs:chassisFrameId", "base_link"),
+        # PubTF 必须设 parentPrim=base_link，否则默认相对 world 发 world->base_link，
+        # 会和 odom->base_link 抢 base_link 父帧。设 parentPrim 后只发
+        # base_link->(arms/torso/wheels/zed 等子连杆)。
+        ("PubTF.inputs:parentPrim", Sdf.Path(BASE_LINK)),
+        ("PubTF.inputs:topicName", "/tf"),
+        ("PubTF.inputs:targetPrims", [Sdf.Path(BASE_LINK)]),
+        ("PubSensorTF.inputs:topicName", "/tf_static"),
+        ("PubSensorTF.inputs:staticPublisher", True),
+        ("PubSensorTF.inputs:parentPrim", Sdf.Path(BASE_LINK)),
+        ("PubSensorTF.inputs:targetPrims",
+         [Sdf.Path(lidar_path), Sdf.Path(IMU_PRIM)]),
+        ("PubCamTF.inputs:topicName", "/tf_static"),
+        ("PubCamTF.inputs:staticPublisher", True),
+        ("PubCamTF.inputs:parentPrim", Sdf.Path(ZED_LINK)),
+        ("PubCamTF.inputs:targetPrims", [Sdf.Path(CAMERA_PRIM)]),
+    ]
+    robot_connects = [
+        ("Tick.outputs:tick", "PubClock.inputs:execIn"),
+        ("Tick.outputs:tick", "PubJoint.inputs:execIn"),
+        ("Tick.outputs:tick", "Odom.inputs:execIn"),
+        ("Tick.outputs:tick", "PubTF.inputs:execIn"),
+        ("Tick.outputs:tick", "PubSensorTF.inputs:execIn"),
+        ("Tick.outputs:tick", "PubCamTF.inputs:execIn"),
+        ("Odom.outputs:execOut", "PubOdom.inputs:execIn"),
+        ("Odom.outputs:position", "PubOdom.inputs:position"),
+        ("Odom.outputs:orientation", "PubOdom.inputs:orientation"),
+        ("Odom.outputs:linearVelocity", "PubOdom.inputs:linearVelocity"),
+        ("Odom.outputs:angularVelocity", "PubOdom.inputs:angularVelocity"),
+        ("SimTime.outputs:simulationTime", "PubClock.inputs:timeStamp"),
+        ("SimTime.outputs:simulationTime", "PubJoint.inputs:timeStamp"),
+        ("SimTime.outputs:simulationTime", "PubOdom.inputs:timeStamp"),
+        ("SimTime.outputs:simulationTime", "PubTF.inputs:timeStamp"),
+        ("SimTime.outputs:simulationTime", "PubSensorTF.inputs:timeStamp"),
+        ("SimTime.outputs:simulationTime", "PubCamTF.inputs:timeStamp"),
+        ("Ctx.outputs:context", "PubClock.inputs:context"),
+        ("Ctx.outputs:context", "PubJoint.inputs:context"),
+        ("Ctx.outputs:context", "PubOdom.inputs:context"),
+        ("Ctx.outputs:context", "PubTF.inputs:context"),
+        ("Ctx.outputs:context", "PubSensorTF.inputs:context"),
+        ("Ctx.outputs:context", "PubCamTF.inputs:context"),
+    ]
+    if PUBLISH_ODOM_TF:
+        robot_nodes.append(
+            ("PubRawTF", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"))
+        robot_values += [
+            ("PubRawTF.inputs:parentFrameId", "odom"),
+            ("PubRawTF.inputs:childFrameId", "base_link"),
+        ]
+        robot_connects += [
+            ("Odom.outputs:execOut", "PubRawTF.inputs:execIn"),
+            ("Odom.outputs:position", "PubRawTF.inputs:translation"),
+            ("Odom.outputs:orientation", "PubRawTF.inputs:rotation"),
+            ("SimTime.outputs:simulationTime", "PubRawTF.inputs:timeStamp"),
+            ("Ctx.outputs:context", "PubRawTF.inputs:context"),
+        ]
     og.Controller.edit(
         {"graph_path": "/ActionGraph_robot", "evaluator_name": "execution"},
         {
-            og.Controller.Keys.CREATE_NODES: [
-                ("Tick", "omni.graph.action.OnPlaybackTick"),
-                ("Ctx", "isaacsim.ros2.bridge.ROS2Context"),
-                ("SimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
-                ("PubClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
-                ("PubJoint", "isaacsim.ros2.bridge.ROS2PublishJointState"),
-                ("Odom", "isaacsim.core.nodes.IsaacComputeOdometry"),
-                ("PubOdom", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
-                ("PubRawTF", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
-                ("PubTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
-                ("PubSensorTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
-                ("PubCamTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
-            ],
-            og.Controller.Keys.SET_VALUES: [
-                ("PubClock.inputs:topicName", "/clock"),
-                ("PubJoint.inputs:topicName", "/joint_states"),
-                ("PubJoint.inputs:targetPrim", [Sdf.Path(BASE_LINK)]),
-                ("Odom.inputs:chassisPrim", [Sdf.Path(BASE_LINK)]),
-                ("PubOdom.inputs:topicName", "/odom"),
-                ("PubOdom.inputs:odomFrameId", "odom"),
-                ("PubOdom.inputs:chassisFrameId", "base_link"),
-                ("PubRawTF.inputs:parentFrameId", "odom"),
-                ("PubRawTF.inputs:childFrameId", "base_link"),
-                # PubTF 必须设 parentPrim=base_link，否则默认相对 world 发 world->base_link，
-                # 与上面 PubRawTF 的 odom->base_link 冲突（/tf 两套父帧抢 base_link）。
-                # 设 parentPrim 后只发 base_link->(arms/torso/wheels/zed 等子连杆)。
-                ("PubTF.inputs:parentPrim", Sdf.Path(BASE_LINK)),
-                ("PubTF.inputs:topicName", "/tf"),
-                ("PubTF.inputs:targetPrims", [Sdf.Path(BASE_LINK)]),
-                ("PubSensorTF.inputs:topicName", "/tf_static"),
-                ("PubSensorTF.inputs:staticPublisher", True),
-                ("PubSensorTF.inputs:parentPrim", Sdf.Path(BASE_LINK)),
-                ("PubSensorTF.inputs:targetPrims",
-                 [Sdf.Path(lidar_path), Sdf.Path(IMU_PRIM)]),
-                ("PubCamTF.inputs:topicName", "/tf_static"),
-                ("PubCamTF.inputs:staticPublisher", True),
-                ("PubCamTF.inputs:parentPrim", Sdf.Path(ZED_LINK)),
-                ("PubCamTF.inputs:targetPrims", [Sdf.Path(CAMERA_PRIM)]),
-            ],
-            og.Controller.Keys.CONNECT: [
-                ("Tick.outputs:tick", "PubClock.inputs:execIn"),
-                ("Tick.outputs:tick", "PubJoint.inputs:execIn"),
-                ("Tick.outputs:tick", "Odom.inputs:execIn"),
-                ("Tick.outputs:tick", "PubTF.inputs:execIn"),
-                ("Tick.outputs:tick", "PubSensorTF.inputs:execIn"),
-                ("Tick.outputs:tick", "PubCamTF.inputs:execIn"),
-                ("Odom.outputs:execOut", "PubOdom.inputs:execIn"),
-                ("Odom.outputs:execOut", "PubRawTF.inputs:execIn"),
-                ("Odom.outputs:position", "PubOdom.inputs:position"),
-                ("Odom.outputs:orientation", "PubOdom.inputs:orientation"),
-                ("Odom.outputs:linearVelocity", "PubOdom.inputs:linearVelocity"),
-                ("Odom.outputs:angularVelocity", "PubOdom.inputs:angularVelocity"),
-                ("Odom.outputs:position", "PubRawTF.inputs:translation"),
-                ("Odom.outputs:orientation", "PubRawTF.inputs:rotation"),
-                ("SimTime.outputs:simulationTime", "PubClock.inputs:timeStamp"),
-                ("SimTime.outputs:simulationTime", "PubJoint.inputs:timeStamp"),
-                ("SimTime.outputs:simulationTime", "PubOdom.inputs:timeStamp"),
-                ("SimTime.outputs:simulationTime", "PubRawTF.inputs:timeStamp"),
-                ("SimTime.outputs:simulationTime", "PubTF.inputs:timeStamp"),
-                ("SimTime.outputs:simulationTime", "PubSensorTF.inputs:timeStamp"),
-                ("SimTime.outputs:simulationTime", "PubCamTF.inputs:timeStamp"),
-                ("Ctx.outputs:context", "PubClock.inputs:context"),
-                ("Ctx.outputs:context", "PubJoint.inputs:context"),
-                ("Ctx.outputs:context", "PubOdom.inputs:context"),
-                ("Ctx.outputs:context", "PubRawTF.inputs:context"),
-                ("Ctx.outputs:context", "PubTF.inputs:context"),
-                ("Ctx.outputs:context", "PubSensorTF.inputs:context"),
-                ("Ctx.outputs:context", "PubCamTF.inputs:context"),
-            ],
+            og.Controller.Keys.CREATE_NODES: robot_nodes,
+            og.Controller.Keys.SET_VALUES: robot_values,
+            og.Controller.Keys.CONNECT: robot_connects,
         },
     )
-    print("[OK] robot state / clock / TF graph created (incl. /tf_static for sensors)")
+    print("[OK] robot state / clock / TF graph created (incl. /tf_static for "
+          "sensors; odom->base_link TF: %s)"
+          % ("ON" if PUBLISH_ODOM_TF else "OFF (FAST-LIO 接管)"))
 
     # ---------- 5. 相机图 (RGB / depth / camera_info 各自可开关) ----------
     if not (ENABLE_RGB or ENABLE_DEPTH):
@@ -306,8 +331,10 @@ def setup():
             ],
             og.Controller.Keys.SET_VALUES: [
                 ("ReadLidar.inputs:lidarPrim", [Sdf.Path(lidar_path)]),
-                ("PubPC.inputs:topicName", "/mid360/points"),
-                ("PubPC.inputs:frameId", "mid360"),
+                # 原始 PointCloud2（含机身自身点）。下游 lidar_self_filter.py 裁剪后
+                # 发 /livox/points，再由 pc2_to_livox.py 转成 /livox/lidar (CustomMsg)。
+                ("PubPC.inputs:topicName", "/livox/lidar_raw"),
+                ("PubPC.inputs:frameId", "livox_frame"),
             ],
             og.Controller.Keys.CONNECT: [
                 ("Tick.outputs:tick", "ReadLidar.inputs:execIn"),
@@ -333,8 +360,10 @@ def setup():
             ],
             og.Controller.Keys.SET_VALUES: [
                 ("ReadImu.inputs:imuPrim", [Sdf.Path(IMU_PRIM)]),
-                ("PubImu.inputs:topicName", "/imu"),
-                ("PubImu.inputs:frameId", "imu"),
+                # 与真实 livox_ros_driver2 对齐：IMU 走 /livox/imu，frame=livox_frame
+                # （与雷达同帧），供 FAST-LIO 直接使用。
+                ("PubImu.inputs:topicName", "/livox/imu"),
+                ("PubImu.inputs:frameId", "livox_frame"),
             ],
             og.Controller.Keys.CONNECT: [
                 ("Tick.outputs:tick", "ReadImu.inputs:execIn"),
@@ -356,8 +385,10 @@ def setup():
     if ENABLE_RGB or ENABLE_DEPTH:
         cam_topics += " /zed/camera_info"
     print("\nDone. After pressing Play, `ros2 topic list` should show:"
-          "\n  /clock /joint_states /odom /tf /tf_static"
-          "\n  /mid360/points /imu%s" % cam_topics)
+          "\n  /clock /joint_states /odom_gt /tf /tf_static"
+          "\n  /livox/lidar_raw /livox/imu%s"
+          "\n(run ros2_sensors/bringup.launch.py -> /livox/points + /livox/lidar)"
+          % cam_topics)
 
 
 if __name__ == "__main__":

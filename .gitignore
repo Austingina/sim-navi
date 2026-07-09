@@ -44,3 +44,8 @@ scene_tools/zhicheng_scene.usda
 # ===== OS =====
 .DS_Store
 Thumbs.db
+
+# ===== ROS2 =====
+install/
+log/
+build/

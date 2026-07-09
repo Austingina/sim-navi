@@ -7,8 +7,8 @@
                 double radius = 5
             }
             dictionary Perspective = {
-                double3 position = (16.587293722147304, 25.79481761847672, 22.99308477291375)
-                double3 target = (13.315671040733847, 7.835016697420993, 7.357228081655453)
+                double3 position = (6.752703490647949, 14.75453855623723, 11.569448256877678)
+                double3 target = (3.411835127114851, 8.267935158867445, 6.066411991379692)
             }
             dictionary Right = {
                 double3 position = (0, -5, 0)
@@ -52,7 +52,7 @@ def Xform "World"
             displayName = "Namespace"
             doc = "Namespace of the prim in Isaac Sim"
         )
-        double3 xformOp:translate = (5.000000074505806, 0, -0.5)
+        double3 xformOp:translate = (0, 0, -1.2)
         uniform token[] xformOpOrder = ["xformOp:translate"]
 
         over "joints"
@@ -412,7 +412,7 @@ def Xform "World"
                 float sensorPeriod = -1
                 quatd xformOp:orient = (1, 0, 0, 0)
                 double3 xformOp:scale = (1, 1, 1)
-                double3 xformOp:translate = (0, 0, 0)
+                double3 xformOp:translate = (0, 0, 0.5)
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
             }
 
@@ -447,7 +447,7 @@ def Xform "World"
                 uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
             }
 
-            def Lidar "mid360"
+            def Lidar "livox_frame"
             {
                 bool drawLines = 0
                 bool drawPoints = 0
@@ -971,7 +971,7 @@ def OmniGraph "ActionGraph_robot"
         custom vector3d inputs:robotFront
         custom double inputs:timeStamp
         prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
-        custom string inputs:topicName = "/odom"
+        custom string inputs:topicName = "/odom_gt"
         token node:type = "isaacsim.ros2.bridge.ROS2PublishOdometry"
         int node:typeVersion = 1
     }
@@ -986,7 +986,6 @@ def OmniGraph "ActionGraph_robot"
                 bool isExecution = 1
             }
         )
-        prepend uint inputs:execIn.connect = </ActionGraph_robot/Odom.outputs:execOut>
         custom string inputs:nodeNamespace
         custom string inputs:parentFrameId = "odom"
         custom string inputs:qosProfile
@@ -1066,7 +1065,7 @@ def OmniGraph "ActionGraph_robot"
         custom uint64 inputs:queueSize
         custom bool inputs:staticPublisher = 1
         custom rel inputs:targetPrims = [
-            </World/r1_pro_with_gripper/base_link/mid360>,
+            </World/r1_pro_with_gripper/base_link/livox_frame>,
             </World/r1_pro_with_gripper/base_link/imu>,
         ] (
             customData = {
@@ -1173,7 +1172,7 @@ def OmniGraph "ActionGraph_lidar"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_lidar/Tick.outputs:tick>
-        custom rel inputs:lidarPrim = </World/r1_pro_with_gripper/base_link/mid360> (
+        custom rel inputs:lidarPrim = </World/r1_pro_with_gripper/base_link/livox_frame> (
             customData = {
                 dictionary omni = {
                     dictionary graph = {
@@ -1207,13 +1206,13 @@ def OmniGraph "ActionGraph_lidar"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_lidar/ReadLidar.outputs:execOut>
-        custom string inputs:frameId = "mid360"
+        custom string inputs:frameId = "livox_frame"
         custom string inputs:nodeNamespace
         custom string inputs:qosProfile
         custom uint64 inputs:queueSize
         custom double inputs:timeStamp
         prepend double inputs:timeStamp.connect = </ActionGraph_lidar/SimTime.outputs:simulationTime>
-        custom string inputs:topicName = "/mid360/points"
+        custom string inputs:topicName = "/livox/lidar_raw"
         token node:type = "isaacsim.ros2.bridge.ROS2PublishPointCloud"
         int node:typeVersion = 1
     }
@@ -1304,7 +1303,7 @@ def OmniGraph "ActionGraph_imu"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_imu/ReadImu.outputs:execOut>
-        custom string inputs:frameId = "imu"
+        custom string inputs:frameId = "livox_frame"
         custom vector3d inputs:linearAcceleration
         prepend vector3d inputs:linearAcceleration.connect = </ActionGraph_imu/ReadImu.outputs:linAcc>
         custom string inputs:nodeNamespace
@@ -1317,7 +1316,7 @@ def OmniGraph "ActionGraph_imu"
         custom uint64 inputs:queueSize
         custom double inputs:timeStamp
         prepend double inputs:timeStamp.connect = </ActionGraph_imu/SimTime.outputs:simulationTime>
-        custom string inputs:topicName = "/imu"
+        custom string inputs:topicName = "/livox/imu"
         token node:type = "isaacsim.ros2.bridge.ROS2PublishImu"
         int node:typeVersion = 1
     }
