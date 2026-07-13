@@ -1,5 +1,5 @@
 #usda 1.0
-( #ISAAC_VIEWPORT=1 ISAAC_HZ=0 ISAAC_RENDER_EVERY=6 ./run_isaacsim.sh --headless scene_seg.usd
+(
     customLayerData = {
         dictionary cameraSettings = {
             dictionary Front = {
@@ -986,6 +986,7 @@ def OmniGraph "ActionGraph_robot"
                 bool isExecution = 1
             }
         )
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Odom.outputs:execOut>
         custom string inputs:nodeNamespace
         custom string inputs:parentFrameId = "odom"
         custom string inputs:qosProfile
@@ -1393,7 +1394,7 @@ def OmniGraph "ActionGraph_camera"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_camera/RP.outputs:execOut>
-        custom uint inputs:frameSkipCount = 11
+        custom uint inputs:frameSkipCount = 1
         custom string inputs:frameId = "zed_camera"
         custom string inputs:nodeNamespace
         custom string inputs:qosProfile
@@ -1415,7 +1416,7 @@ def OmniGraph "ActionGraph_camera"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_camera/RP.outputs:execOut>
-        custom uint inputs:frameSkipCount = 11
+        custom uint inputs:frameSkipCount = 1
         custom string inputs:frameId = "zed_camera"
         custom string inputs:nodeNamespace
         custom string inputs:qosProfile

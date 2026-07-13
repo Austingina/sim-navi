@@ -91,6 +91,18 @@ if [[ -n "$TARGET" ]]; then
     fi
 fi
 
+# scene_seg.usd：NuRec 相机场景默认配置(可被环境变量覆盖)。
+#   VIEWPORT=1       开渲染(相机 render product 需要)
+#   HZ=0             不主动限速；isaac_headless.py 内封顶 60Hz
+#   RENDER_EVERY=6   每 6 物理步渲 1 次 -> 相机 ~10Hz，物理/雷达仍满频
+if [[ "$MODE" == "headless" && "$(basename "${TARGET:-}")" == "scene_seg.usd" ]]; then
+    export ISAAC_VIEWPORT="${ISAAC_VIEWPORT:-0}"
+    export ISAAC_HZ="${ISAAC_HZ:-0}"
+    export ISAAC_RENDER_EVERY="${ISAAC_RENDER_EVERY:-6}"
+    echo "[info] scene_seg 相机模式: ISAAC_VIEWPORT=$ISAAC_VIEWPORT"
+    echo "[info]   ISAAC_HZ=$ISAAC_HZ(封顶60)  ISAAC_RENDER_EVERY=$ISAAC_RENDER_EVERY"
+fi
+
 case "$MODE" in
   headless)
     # 纯无头 + 自动 Play: 走 standalone python(SimulationApp headless=True), 只发 ROS。
