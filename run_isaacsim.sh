@@ -92,15 +92,15 @@ if [[ -n "$TARGET" ]]; then
 fi
 
 # scene_seg.usd：NuRec 相机场景默认配置(可被环境变量覆盖)。
-#   VIEWPORT=1       开渲染(相机 render product 需要)
-#   HZ=0             不主动限速；isaac_headless.py 内封顶 60Hz
-#   RENDER_EVERY=6   每 6 物理步渲 1 次 -> 相机 ~10Hz，物理/雷达仍满频
+#   VIEWPORT=1       开渲染(相机 render product 需要；=0 则只出 IMU/雷达等非渲染话题)
+#   HZ=0             不主动限速；isaac_headless.py 内封顶物理步频(ISAAC_PHYSICS_HZ，默认200Hz)
+#   RENDER_HZ=12     相机/渲染目标 ~12Hz；IMU 走 OnPhysicsStep 按物理步频(200Hz)发布，不受抽帧影响
 if [[ "$MODE" == "headless" && "$(basename "${TARGET:-}")" == "scene_seg.usd" ]]; then
     export ISAAC_VIEWPORT="${ISAAC_VIEWPORT:-0}"
     export ISAAC_HZ="${ISAAC_HZ:-0}"
-    export ISAAC_RENDER_EVERY="${ISAAC_RENDER_EVERY:-6}"
+    export ISAAC_RENDER_HZ="${ISAAC_RENDER_HZ:-12}"
     echo "[info] scene_seg 相机模式: ISAAC_VIEWPORT=$ISAAC_VIEWPORT"
-    echo "[info]   ISAAC_HZ=$ISAAC_HZ(封顶60)  ISAAC_RENDER_EVERY=$ISAAC_RENDER_EVERY"
+    echo "[info]   ISAAC_HZ=$ISAAC_HZ  ISAAC_RENDER_HZ=$ISAAC_RENDER_HZ  (IMU=物理步频, 已与渲染解耦)"
 fi
 
 case "$MODE" in

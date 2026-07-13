@@ -348,11 +348,22 @@ def setup():
     print("[OK] Mid360 point cloud graph created (PhysX)")
 
     # ---------- 7. IMU 图 ----------
+    # IMU 用 OnPhysicsStep(每个物理步触发一次)而不是 OnPlaybackTick(每渲染帧触发)：
+    #   - 与渲染/相机抽帧解耦：headless 下即使把渲染频率降到 ~10Hz(RENDER_EVERY)，IMU
+    #     仍按【物理步频】发布(真实 Mid360 IMU 是 200Hz)，不会被一起拖到 ~10Hz。
+    #   - 天然去重：OnPlaybackTick 在无头 step() 里一帧会被评估两次，导致 /livox/imu
+    #     每个时间戳重复发两条；OnPhysicsStep 每个物理步只触发一次，不再重复。
+    # 物理步频(=IMU 发布率)在 isaac_headless.py 里用 ISAAC_PHYSICS_HZ 设置(默认 200Hz)。
+    # 注意：OnPhysicsStep 只在【on-demand】图里才会触发(它靠物理回调驱动图评估，不走
+    # 每帧的 simulation 管线)；若图仍是 pipelineStageSimulation，Isaac 会报
+    # "Physics OnSimulationStep node detected in a non on-demand Graph" 且 IMU 不发。
+    # 所以这个图必须设 pipeline_stage=ON_DEMAND。
     og.Controller.edit(
-        {"graph_path": "/ActionGraph_imu", "evaluator_name": "execution"},
+        {"graph_path": "/ActionGraph_imu", "evaluator_name": "execution",
+         "pipeline_stage": og.GraphPipelineStage.GRAPH_PIPELINE_STAGE_ONDEMAND},
         {
             og.Controller.Keys.CREATE_NODES: [
-                ("Tick", "omni.graph.action.OnPlaybackTick"),
+                ("Tick", "isaacsim.core.nodes.OnPhysicsStep"),
                 ("Ctx", "isaacsim.ros2.bridge.ROS2Context"),
                 ("SimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
                 ("ReadImu", "isaacsim.sensors.physics.IsaacReadIMU"),
@@ -366,7 +377,8 @@ def setup():
                 ("PubImu.inputs:frameId", "livox_frame"),
             ],
             og.Controller.Keys.CONNECT: [
-                ("Tick.outputs:tick", "ReadImu.inputs:execIn"),
+                # OnPhysicsStep 的执行输出口叫 outputs:step(不是 OnPlaybackTick 的 outputs:tick)
+                ("Tick.outputs:step", "ReadImu.inputs:execIn"),
                 ("ReadImu.outputs:execOut", "PubImu.inputs:execIn"),
                 ("ReadImu.outputs:linAcc", "PubImu.inputs:linearAcceleration"),
                 ("ReadImu.outputs:angVel", "PubImu.inputs:angularVelocity"),
@@ -376,7 +388,7 @@ def setup():
             ],
         },
     )
-    print("[OK] IMU graph created")
+    print("[OK] IMU graph created (OnPhysicsStep -> /livox/imu 按物理步频发布，已与渲染解耦/去重)")
     cam_topics = ""
     if ENABLE_RGB:
         cam_topics += " /zed/rgb/image_raw"

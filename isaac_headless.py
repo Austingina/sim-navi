@@ -88,13 +88,24 @@ while is_stage_loading():
 # 关键：standalone 无头里必须用 SimulationContext 来步进物理，
 # 光 timeline.play()+simulation_app.update() 不会推进仿真时间(current_time 恒为 0)。
 # stage_units_in_meters=1.0 与本场景 metersPerUnit=1 对齐，避免被默认 0.01(cm) 改比例。
-# 不设固定步长、不做 sleep 节流：Isaac 默认按真实时间推进物理，自然封顶在 RTF≈1，
-# 之前实测 clock.sec 10 秒/10 秒 = 1.0。加节流反而会让每帧少推进、掉到 ~0.89。
+# 这里显式设固定物理步长(physics_dt=1/PHYS_HZ)：IMU 图按物理步发布，步频必须可控且稳定；
+# 下方主循环把每秒步数钉在 PHYS_HZ 上(sleep 节流)，从而 RTF≈1。
 from isaacsim.core.api import SimulationContext  # noqa: E402
 
-sim_context = SimulationContext(stage_units_in_meters=1.0)
-sim_context.initialize_physics()   # 建立物理视图(场景没显式 PhysicsScene 时会建默认 60Hz)
+# 物理步频(= IMU 发布率)。场景里 IMU 图已改用 isaacsim.core.nodes.OnPhysicsStep 触发，
+# /livox/imu 就按【物理步频】发布，和渲染/相机抽帧(RENDER_EVERY)完全解耦。真实 Livox
+# Mid360 IMU 是 200Hz，这里默认 200；机器带不动可用 ISAAC_PHYSICS_HZ 调低(如 100)。
+# rendering_dt 取和 physics_dt 相等(substeps=1) -> 每次 step() 恰好推进 1 个物理步，
+# 保持主循环“一次迭代 = 一步”的假设不变；clock/odom/tf/雷达/相机仍按 RENDER_EVERY 抽帧降频。
+PHYS_HZ = float(_os.environ.get("ISAAC_PHYSICS_HZ", "200"))
+PHYS_DT = 1.0 / PHYS_HZ
+sim_context = SimulationContext(physics_dt=PHYS_DT, rendering_dt=PHYS_DT,
+                                stage_units_in_meters=1.0)
+sim_context.initialize_physics()   # 建立物理视图
+sim_context.set_simulation_dt(physics_dt=PHYS_DT, rendering_dt=PHYS_DT)  # 落实物理步频
 sim_context.play()                 # 开始播放；内部会先走一步把物理句柄接好
+print(f"[headless] 物理步频 = {PHYS_HZ:.0f}Hz (ISAAC_PHYSICS_HZ) -> /livox/imu 同频发布"
+      f"(OnPhysicsStep，已与渲染解耦、不再重复)。")
 print("[headless] SimulationContext.play()，按真实时间推进(RTF≈1)。"
       "ROS 话题应已开始发布(ros2 topic list 查看)。Ctrl+C 退出。")
 
@@ -180,22 +191,27 @@ import time  # noqa: E402
 import signal  # noqa: E402
 import threading  # noqa: E402
 
-# 实时节流：把每秒步进数钉在 TARGET_HZ。
-# 想改频率(或想放开跑满)：设环境变量 ISAAC_HZ=60 / 30 / 0(0=不节流，能跑多快跑多快)。
-TARGET_HZ = float(_os.environ.get("ISAAC_HZ", "60"))
+# 实时节流：把每秒步进数(=物理步频)钉在 TARGET_HZ。每次迭代恰好推进 1 个物理步，
+# 循环频率就是物理步频；默认钉在 PHYS_HZ 让 RTF≈1(IMU 随之稳定在 PHYS_HZ)。
+# 想改频率(或放开跑满)：设 ISAAC_HZ=200 / 100 / 0(0=不节流，能跑多快跑多快)。
+TARGET_HZ = float(_os.environ.get("ISAAC_HZ", str(PHYS_HZ)))
 PERIOD = (1.0 / TARGET_HZ) if TARGET_HZ > 0 else 0.0
-print(f"[headless] 实时节流 TARGET_HZ={TARGET_HZ}"
+print(f"[headless] 实时节流 TARGET_HZ={TARGET_HZ:.0f}"
       + ("(不节流)" if PERIOD == 0 else f" -> 每步目标周期 {PERIOD*1000:.2f} ms"))
 
-# 渲染抽帧：每 RENDER_EVERY 个物理步才渲染1次(相机随之降频)，物理步仍每步执行。
-# 用于 NuRec 相机场景：渲染 100ms/帧，每步都渲 -> RTF~0.15；每 6 步渲1次(相机~10Hz)
-# -> 渲染开销砍到 1/6，RTF 拉回接近 1，物理/雷达/IMU 保持满频(前提：它们不只在渲染帧发布)。
-# 1=每步都渲(默认)。开相机想实时：设 6(配合 ISAAC_HZ=0 让渲染自然定速)。
-RENDER_EVERY = max(1, int(_os.environ.get("ISAAC_RENDER_EVERY", "1")))
-if RENDER_EVERY > 1:
-    print(f"[headless] 渲染抽帧：每 {RENDER_EVERY} 步渲1次"
-          f"(相机≈{60.0/RENDER_EVERY:.0f}Hz，物理/雷达/IMU 仍每步)。"
-          f"建议配合 ISAAC_HZ=0。")
+# 渲染抽帧：每 RENDER_EVERY 个物理步才渲染1次。渲染帧驱动挂在 OnPlaybackTick 上的图
+# (clock/odom/tf/雷达/相机)；IMU 走 OnPhysicsStep，不受抽帧影响，始终按物理步频发布。
+# 默认按“目标渲染频率 ISAAC_RENDER_HZ(默认20)”自动换算，与物理步频解耦(避免物理提到
+# 200Hz 后 clock/雷达/相机也飙到200Hz)；也可用 ISAAC_RENDER_EVERY 显式覆盖“每几步渲一次”。
+#   例：PHYS_HZ=200、RENDER_HZ=20 -> RENDER_EVERY=10 -> clock/雷达≈20Hz，IMU=200Hz。
+_render_every_env = _os.environ.get("ISAAC_RENDER_EVERY", "").strip()
+if _render_every_env:
+    RENDER_EVERY = max(1, int(_render_every_env))
+else:
+    _render_hz = float(_os.environ.get("ISAAC_RENDER_HZ", "20"))
+    RENDER_EVERY = max(1, round(PHYS_HZ / _render_hz)) if _render_hz > 0 else 1
+print(f"[headless] 渲染抽帧：每 {RENDER_EVERY} 步渲1次 "
+      f"(clock/odom/tf/雷达/相机≈{PHYS_HZ / RENDER_EVERY:.0f}Hz，IMU={PHYS_HZ:.0f}Hz 不受影响)。")
 
 # 交互控制：无头没有 GUI 的 Stop/Play，这里给两条复位/退出入口。
 # 后台线程只置标志位，真正的 reset()/退出 由主循环执行(跨线程调物理不安全)。

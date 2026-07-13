@@ -1224,20 +1224,19 @@ def OmniGraph "ActionGraph_imu"
     token evaluator:type = "execution"
     token fabricCacheBacking = "StageWithoutHistory"
     int2 fileFormatVersion = (1, 9)
-    token pipelineStage = "pipelineStageSimulation"
+    token pipelineStage = "pipelineStageOnDemand"
 
     def OmniGraphNode "Tick"
     {
-        token node:type = "omni.graph.action.OnPlaybackTick"
-        int node:typeVersion = 2
-        custom double outputs:deltaSeconds
-        custom double outputs:frame
-        custom uint outputs:tick (
+        token node:type = "isaacsim.core.nodes.OnPhysicsStep"
+        int node:typeVersion = 1
+        custom double outputs:deltaSimulationTime
+        custom double outputs:deltaSystemTime
+        custom uint outputs:step (
             customData = {
                 bool isExecution = 1
             }
         )
-        custom double outputs:time
     }
 
     def OmniGraphNode "Ctx"
@@ -1266,7 +1265,7 @@ def OmniGraph "ActionGraph_imu"
                 bool isExecution = 1
             }
         )
-        prepend uint inputs:execIn.connect = </ActionGraph_imu/Tick.outputs:tick>
+        prepend uint inputs:execIn.connect = </ActionGraph_imu/Tick.outputs:step>
         custom rel inputs:imuPrim = </World/r1_pro_with_gripper/base_link/imu> (
             customData = {
                 dictionary omni = {
