@@ -759,7 +759,6 @@ def OmniGraph "ActionGraph_control"
         int node:typeVersion = 2
         custom uint64 outputs:context
     }
-
     def OmniGraphNode "SubJoint"
     {
         custom uint64 inputs:context
@@ -861,25 +860,24 @@ def OmniGraph "ActionGraph_robot"
         custom double outputs:simulationTime
     }
 
-    def OmniGraphNode "PubClock"
+    def OmniGraphNode "Gate"
     {
-        custom uint64 inputs:context
-        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
         custom uint inputs:execIn (
             customData = {
                 bool isExecution = 1
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
-        custom string inputs:nodeNamespace
-        custom string inputs:qosProfile
-        custom uint64 inputs:queueSize
-        custom double inputs:timeStamp
-        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
-        custom string inputs:topicName = "/clock"
-        token node:type = "isaacsim.ros2.bridge.ROS2PublishClock"
+        custom uint inputs:step = 1
+        token node:type = "isaacsim.core.nodes.IsaacSimulationGate"
         int node:typeVersion = 1
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
     }
+
 
     def OmniGraphNode "PubJoint"
     {
@@ -890,7 +888,7 @@ def OmniGraph "ActionGraph_robot"
                 bool isExecution = 1
             }
         )
-        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Gate.outputs:execOut>
         custom string inputs:nodeNamespace
         custom string inputs:qosProfile
         custom uint64 inputs:queueSize
@@ -926,7 +924,7 @@ def OmniGraph "ActionGraph_robot"
                 bool isExecution = 1
             }
         )
-        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Gate.outputs:execOut>
         token node:type = "isaacsim.core.nodes.IsaacComputeOdometry"
         int node:typeVersion = 1
         custom vector3d outputs:angularAcceleration
@@ -976,33 +974,6 @@ def OmniGraph "ActionGraph_robot"
         int node:typeVersion = 1
     }
 
-    def OmniGraphNode "PubRawTF"
-    {
-        custom string inputs:childFrameId = "base_link"
-        custom uint64 inputs:context
-        prepend uint64 inputs:context.connect = </ActionGraph_robot/Ctx.outputs:context>
-        custom uint inputs:execIn (
-            customData = {
-                bool isExecution = 1
-            }
-        )
-        prepend uint inputs:execIn.connect = </ActionGraph_robot/Odom.outputs:execOut>
-        custom string inputs:nodeNamespace
-        custom string inputs:parentFrameId = "odom"
-        custom string inputs:qosProfile
-        custom uint64 inputs:queueSize
-        custom quatd inputs:rotation
-        prepend quatd inputs:rotation.connect = </ActionGraph_robot/Odom.outputs:orientation>
-        custom bool inputs:staticPublisher
-        custom double inputs:timeStamp
-        prepend double inputs:timeStamp.connect = </ActionGraph_robot/SimTime.outputs:simulationTime>
-        custom string inputs:topicName
-        custom vector3d inputs:translation
-        prepend vector3d inputs:translation.connect = </ActionGraph_robot/Odom.outputs:position>
-        token node:type = "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"
-        int node:typeVersion = 1
-    }
-
     def OmniGraphNode "PubTF"
     {
         custom uint64 inputs:context
@@ -1012,7 +983,7 @@ def OmniGraph "ActionGraph_robot"
                 bool isExecution = 1
             }
         )
-        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Gate.outputs:execOut>
         custom string inputs:nodeNamespace
         custom rel inputs:parentPrim = </World/r1_pro_with_gripper/base_link> (
             customData = {
@@ -1051,7 +1022,7 @@ def OmniGraph "ActionGraph_robot"
                 bool isExecution = 1
             }
         )
-        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Gate.outputs:execOut>
         custom string inputs:nodeNamespace
         custom rel inputs:parentPrim = </World/r1_pro_with_gripper/base_link> (
             customData = {
@@ -1093,7 +1064,7 @@ def OmniGraph "ActionGraph_robot"
                 bool isExecution = 1
             }
         )
-        prepend uint inputs:execIn.connect = </ActionGraph_robot/Tick.outputs:tick>
+        prepend uint inputs:execIn.connect = </ActionGraph_robot/Gate.outputs:execOut>
         custom string inputs:nodeNamespace
         custom rel inputs:parentPrim = </World/r1_pro_with_gripper/zed_link> (
             customData = {
@@ -1165,7 +1136,7 @@ def OmniGraph "ActionGraph_lidar"
         custom double outputs:simulationTime
     }
 
-    def OmniGraphNode "ReadLidar"
+    def OmniGraphNode "Gate"
     {
         custom uint inputs:execIn (
             customData = {
@@ -1173,6 +1144,24 @@ def OmniGraph "ActionGraph_lidar"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_lidar/Tick.outputs:tick>
+        custom uint inputs:step = 1
+        token node:type = "isaacsim.core.nodes.IsaacSimulationGate"
+        int node:typeVersion = 1
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+    }
+
+    def OmniGraphNode "ReadLidar"
+    {
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_lidar/Gate.outputs:execOut>
         custom rel inputs:lidarPrim = </World/r1_pro_with_gripper/base_link/livox_frame> (
             customData = {
                 dictionary omni = {
@@ -1320,6 +1309,45 @@ def OmniGraph "ActionGraph_imu"
         token node:type = "isaacsim.ros2.bridge.ROS2PublishImu"
         int node:typeVersion = 1
     }
+
+    def OmniGraphNode "ClockGate"
+    {
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_imu/Tick.outputs:step>
+        custom uint inputs:step = 10
+        token node:type = "isaacsim.core.nodes.IsaacSimulationGate"
+        int node:typeVersion = 1
+        custom uint outputs:execOut (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+    }
+
+    def OmniGraphNode "PubClock"
+    {
+        custom uint64 inputs:context
+        prepend uint64 inputs:context.connect = </ActionGraph_imu/Ctx.outputs:context>
+        custom uint inputs:execIn (
+            customData = {
+                bool isExecution = 1
+            }
+        )
+        prepend uint inputs:execIn.connect = </ActionGraph_imu/ClockGate.outputs:execOut>
+        custom string inputs:nodeNamespace
+        custom string inputs:qosProfile
+        custom uint64 inputs:queueSize
+        custom double inputs:timeStamp
+        prepend double inputs:timeStamp.connect = </ActionGraph_imu/SimTime.outputs:simulationTime>
+        custom string inputs:topicName = "/clock"
+        token node:type = "isaacsim.ros2.bridge.ROS2PublishClock"
+        int node:typeVersion = 1
+    }
+
 }
 
 def OmniGraph "ActionGraph_camera"
@@ -1428,4 +1456,3 @@ def OmniGraph "ActionGraph_camera"
         int node:typeVersion = 2
     }
 }
-

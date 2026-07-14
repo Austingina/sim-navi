@@ -85,6 +85,23 @@ open_stage(USD_PATH)
 while is_stage_loading():
     simulation_app.update()
 
+# ISAAC_VIEWPORT=0 表示本次不要相机数据。仅 disable_viewport_updates 还不够：
+# ActionGraph_camera 创建的 Replicator render products 仍会让 NuRec 相机做离屏渲染，
+# 显著拖低 RTF。这里在 stage 加载后显式停图并停用所有 render product；
+# sim_context.step(render=True) 仍会产生雷达所需的 OnPlaybackTick。
+if not _viewport:
+    from pxr import UsdRender  # noqa: E402
+
+    _stage = omni.usd.get_context().get_stage()
+    _camera_graph = _stage.GetPrimAtPath("/ActionGraph_camera")
+    if _camera_graph.IsValid():
+        _camera_graph.GetAttribute("evaluationMode").Set("Disabled")
+    _render_products = [p for p in _stage.Traverse() if p.IsA(UsdRender.Product)]
+    for _rp in _render_products:
+        _rp.SetActive(False)
+    print(f"[headless] 相机图已禁用，停用 {len(_render_products)} 个 render product "
+          "(ISAAC_VIEWPORT=0)。")
+
 # 关键：standalone 无头里必须用 SimulationContext 来步进物理，
 # 光 timeline.play()+simulation_app.update() 不会推进仿真时间(current_time 恒为 0)。
 # stage_units_in_meters=1.0 与本场景 metersPerUnit=1 对齐，避免被默认 0.01(cm) 改比例。
@@ -96,20 +113,62 @@ from isaacsim.core.api import SimulationContext  # noqa: E402
 # /livox/imu 就按【物理步频】发布，和渲染/相机抽帧(RENDER_EVERY)完全解耦。真实 Livox
 # Mid360 IMU 是 200Hz，这里默认 200；机器带不动可用 ISAAC_PHYSICS_HZ 调低(如 100)。
 # rendering_dt 取和 physics_dt 相等(substeps=1) -> 每次 step() 恰好推进 1 个物理步，
-# 保持主循环“一次迭代 = 一步”的假设不变；clock/odom/tf/雷达/相机仍按 RENDER_EVERY 抽帧降频。
+# 保持主循环“一次迭代 = 一步”的假设不变；IMU 与 /clock 走物理步，
+# 雷达、odom、tf、相机按 RENDER_EVERY 抽帧。
 PHYS_HZ = float(_os.environ.get("ISAAC_PHYSICS_HZ", "200"))
 PHYS_DT = 1.0 / PHYS_HZ
+# 在 initialize_physics() 重新注册传感器【之前】设置，否则 PhysX 插件会缓存旧的
+# rotationRate(场景里烘焙的 20Hz)，运行中改属性只能部分生效。记录原值仅用于打印日志；
+# schema 明确定义 rotationRate=0 为“all rays at once”，即每次读取生成完整一圈。
+LIDAR_PRIM = "/World/r1_pro_with_gripper/base_link/livox_frame"
+_lidar_prim = omni.usd.get_context().get_stage().GetPrimAtPath(LIDAR_PRIM)
+_lidar_rot_rate = float(_lidar_prim.GetAttribute("rotationRate").Get() or 20.0)
+_lidar_full_scan = _os.environ.get("ISAAC_LIDAR_FULL_SCAN", "1").strip().lower() \
+    not in ("0", "false", "no", "off")
+if _lidar_full_scan:
+    _lidar_prim.GetAttribute("rotationRate").Set(0.0)
+_lidar_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_lidar/Gate")
+if _lidar_gate.IsValid():
+    # standalone 的 step(render=True) 会产生两个 playback tick；仅无头运行时设2去重。
+    # USD/GUI 保持 step=1，不影响交互模式的一帧一发。
+    _lidar_gate.GetAttribute("inputs:step").Set(2)
+# 机器人图(/tf、/odom_gt、/joint_states)同样挂在 OnPlaybackTick 上，同样受双 tick 影响。
+# 用同一套路把它的 Gate 设 2 去重：否则这些话题会成对发相同时间戳，tf2 报 TF_REPEATED_DATA。
+_robot_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_robot/Gate")
+if _robot_gate.IsValid():
+    _robot_gate.GetAttribute("inputs:step").Set(2)
+# /clock 与 IMU 共用物理步触发源，但通过 Gate 均匀降频。默认 200/20=每10步发布，
+# 既没有 playback 双 tick 的成对突发，也不承担 200Hz ROS clock 的额外开销。
+CLOCK_HZ = float(_os.environ.get("ISAAC_CLOCK_HZ", "20"))
+_clock_step = max(1, round(PHYS_HZ / CLOCK_HZ)) if CLOCK_HZ > 0 else 1
+_clock_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_imu/ClockGate")
+if _clock_gate.IsValid():
+    _clock_gate.GetAttribute("inputs:step").Set(_clock_step)
 sim_context = SimulationContext(physics_dt=PHYS_DT, rendering_dt=PHYS_DT,
                                 stage_units_in_meters=1.0)
 sim_context.initialize_physics()   # 建立物理视图
 sim_context.set_simulation_dt(physics_dt=PHYS_DT, rendering_dt=PHYS_DT)  # 落实物理步频
 sim_context.play()                 # 开始播放；内部会先走一步把物理句柄接好
+simulation_app.update()            # 让 PhysX sensor extension 完成重新注册
 print(f"[headless] 物理步频 = {PHYS_HZ:.0f}Hz (ISAAC_PHYSICS_HZ) -> /livox/imu 同频发布"
       f"(OnPhysicsStep，已与渲染解耦、不再重复)。")
-print("[headless] SimulationContext.play()，按真实时间推进(RTF≈1)。"
+print(f"[headless] /clock = {PHYS_HZ / _clock_step:.0f}Hz "
+      f"(ISAAC_CLOCK_HZ={CLOCK_HZ:g}，OnPhysicsStep + Gate，每 {_clock_step} 步一次)。")
+print("[headless] SimulationContext.play()，目标按真实时间推进(RTF≈1，实际取决于负载)。"
       "ROS 话题应已开始发布(ros2 topic list 查看)。Ctrl+C 退出。")
 
 report_timestep()   # 打印 dt / 步频
+
+# ---- Headless PhysX Lidar scan adaptation ----
+# 无头模式只在渲染抽帧调用 ReadLidar。rotationRate=0 让每次调用直接生成完整一圈；
+# ROS 调用频率仍由 ISAAC_RENDER_HZ 控制，USD 文件本身不会被保存修改。
+if _lidar_full_scan:
+    print(f"[headless] 雷达适配已就绪：每个 OnPlaybackTick 生成完整一圈，"
+          f"原始 rotationRate={_lidar_rot_rate:g}Hz；实际发布频率由 "
+          "ISAAC_RENDER_HZ 控制 -> /livox/lidar_raw")
+else:
+    print(f"[headless] 雷达使用原生旋转扫描 {_lidar_rot_rate:g}Hz "
+          "(ISAAC_LIDAR_FULL_SCAN=0，仅用于性能对照)。")
 
 # 可选：降低 RTX 每像素采样数，减轻渲染(尤其 NuRec 相机场景，SPP 减半开销近乎减半)。
 # ISAAC_SPP=2；0/未设 = 不改(用场景默认 8)。用 carb 运行时改，比改 usdz 里的只读元数据可靠。
@@ -200,18 +259,22 @@ print(f"[headless] 实时节流 TARGET_HZ={TARGET_HZ:.0f}"
       + ("(不节流)" if PERIOD == 0 else f" -> 每步目标周期 {PERIOD*1000:.2f} ms"))
 
 # 渲染抽帧：每 RENDER_EVERY 个物理步才渲染1次。渲染帧驱动挂在 OnPlaybackTick 上的图
-# (clock/odom/tf/雷达/相机)；IMU 走 OnPhysicsStep，不受抽帧影响，始终按物理步频发布。
-# 默认按“目标渲染频率 ISAAC_RENDER_HZ(默认20)”自动换算，与物理步频解耦(避免物理提到
-# 200Hz 后 clock/雷达/相机也飙到200Hz)；也可用 ISAAC_RENDER_EVERY 显式覆盖“每几步渲一次”。
-#   例：PHYS_HZ=200、RENDER_HZ=20 -> RENDER_EVERY=10 -> clock/雷达≈20Hz，IMU=200Hz。
+# (odom/tf/雷达/相机)；IMU 与 /clock 走 OnPhysicsStep。
+# 默认按“目标渲染频率 ISAAC_RENDER_HZ(默认10)”自动换算，与物理步频解耦(避免物理提到
+# 200Hz 后雷达/相机也飙到200Hz)；也可用 ISAAC_RENDER_EVERY 显式覆盖“每几步渲一次”。
+# standalone 每个渲染步产生两个 playback tick；雷达 Gate(step=2) 去重，状态图未去重。
+#   例：PHYS_HZ=200、RENDER_HZ=10 -> 状态图≈20Hz、雷达≈10Hz；
+#       /clock=均匀20Hz、IMU=200Hz（后二者与渲染解耦）。
 _render_every_env = _os.environ.get("ISAAC_RENDER_EVERY", "").strip()
 if _render_every_env:
     RENDER_EVERY = max(1, int(_render_every_env))
 else:
-    _render_hz = float(_os.environ.get("ISAAC_RENDER_HZ", "20"))
+    _render_hz = float(_os.environ.get("ISAAC_RENDER_HZ", "10"))
     RENDER_EVERY = max(1, round(PHYS_HZ / _render_hz)) if _render_hz > 0 else 1
 print(f"[headless] 渲染抽帧：每 {RENDER_EVERY} 步渲1次 "
-      f"(clock/odom/tf/雷达/相机≈{PHYS_HZ / RENDER_EVERY:.0f}Hz，IMU={PHYS_HZ:.0f}Hz 不受影响)。")
+      f"(状态图≈{2 * PHYS_HZ / RENDER_EVERY:.0f}Hz；"
+      f"雷达≈{PHYS_HZ / RENDER_EVERY:.0f}Hz；"
+      f"/clock={PHYS_HZ / _clock_step:.0f}Hz、IMU={PHYS_HZ:.0f}Hz 不受影响)。")
 
 # 交互控制：无头没有 GUI 的 Stop/Play，这里给两条复位/退出入口。
 # 后台线程只置标志位，真正的 reset()/退出 由主循环执行(跨线程调物理不安全)。
@@ -264,10 +327,9 @@ try:
             _next_t = time.time()
 
         # 渲染抽帧：非渲染步只推物理(便宜)，渲染步才付相机渲染开销。
-        # 注意：若雷达/IMU/clock 只在渲染帧发布，抽帧会把它们也降频 —— 跑起来看 hz 验证。
+        # odom/tf/雷达/相机随渲染帧；/clock 与 IMU 由 OnPhysicsStep 驱动。
         _do_render = (_frame % RENDER_EVERY == 0)
         sim_context.step(render=_do_render)   # 步进物理 + 评估 OmniGraph(含 ROS 发布)
-
         # 实时节流：睡到本步的目标时刻，把频率钉在 TARGET_HZ。
         if PERIOD > 0:
             _next_t += PERIOD
@@ -284,7 +346,9 @@ try:
             ds = _s_now - _s_last
             dw = _w_now - _w_last
             rtf = ds / dw if dw > 0 else 0.0
-            print(f"[rtf] sim +{ds:.2f}s / wall +{dw:.2f}s -> RTF = {rtf:.3f}  (目标 {TARGET_HZ:.0f}Hz)")
+            _target = "不节流(full speed)" if PERIOD == 0 else f"节流 {TARGET_HZ:.0f}Hz"
+            print(f"[rtf] sim +{ds:.2f}s / wall +{dw:.2f}s -> RTF = {rtf:.3f}  "
+                  f"(物理 {PHYS_HZ:.0f}Hz, {_target})")
             _w_last, _s_last = _w_now, _s_now
 except KeyboardInterrupt:
     print("\n[headless] 收到 Ctrl+C，停止。")

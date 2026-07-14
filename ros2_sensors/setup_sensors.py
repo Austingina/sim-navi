@@ -162,16 +162,20 @@ def setup():
     # ②在下游把“机身所在区域”的点裁掉（ros2_sensors/lidar_self_filter.py，推荐，
     #   只裁机身足迹、保留其它近点）。这里不再做无效的 FilteredPairsAPI。
     print("[note] PhysX lidar 无法忽略指定 prim；机身自身点请用下游 "
-          "lidar_self_filter.py 裁剪(见 README)，或调大 LIDAR_MIN_RANGE。")
+          "lidar_self_filter.py 裁剪(见 README.md)，或调大 LIDAR_MIN_RANGE。")
 
-    # ---------- 4. /clock + 机器人状态 (joint_states / odom / tf) ----------
+    # ---------- 4. 机器人状态 (joint_states / odom / tf) ----------
     # PubRawTF(odom->base_link 真值 TF) 受 PUBLISH_ODOM_TF 开关控制：跑 FAST-LIO 时
     # 设为 False，让 FAST-LIO 独占 odom->base_link，避免 base_link 双父帧冲突。
     robot_nodes = [
         ("Tick", "omni.graph.action.OnPlaybackTick"),
+        # Gate 去重：standalone 无头 step() 里 OnPlaybackTick 每帧评估两次，会让
+        # /tf、/odom_gt、/joint_states 发出成对相同时间戳的重复消息(tf2 报 TF_REPEATED_DATA)。
+        # 与雷达图同一套路：默认 step=1(GUI/交互不受影响，一帧一发)，isaac_headless.py
+        # 在无头下把 /ActionGraph_robot/Gate 的 step 设为 2 去重。
+        ("Gate", "isaacsim.core.nodes.IsaacSimulationGate"),
         ("Ctx", "isaacsim.ros2.bridge.ROS2Context"),
         ("SimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
-        ("PubClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
         ("PubJoint", "isaacsim.ros2.bridge.ROS2PublishJointState"),
         ("Odom", "isaacsim.core.nodes.IsaacComputeOdometry"),
         ("PubOdom", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
@@ -180,7 +184,6 @@ def setup():
         ("PubCamTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
     ]
     robot_values = [
-        ("PubClock.inputs:topicName", "/clock"),
         ("PubJoint.inputs:topicName", "/joint_states"),
         ("PubJoint.inputs:targetPrim", [Sdf.Path(BASE_LINK)]),
         ("Odom.inputs:chassisPrim", [Sdf.Path(BASE_LINK)]),
@@ -204,24 +207,23 @@ def setup():
         ("PubCamTF.inputs:targetPrims", [Sdf.Path(CAMERA_PRIM)]),
     ]
     robot_connects = [
-        ("Tick.outputs:tick", "PubClock.inputs:execIn"),
-        ("Tick.outputs:tick", "PubJoint.inputs:execIn"),
-        ("Tick.outputs:tick", "Odom.inputs:execIn"),
-        ("Tick.outputs:tick", "PubTF.inputs:execIn"),
-        ("Tick.outputs:tick", "PubSensorTF.inputs:execIn"),
-        ("Tick.outputs:tick", "PubCamTF.inputs:execIn"),
+        # OnPlaybackTick -> Gate -> 各发布节点(execIn)，让整组随 Gate.step 一起降频/去重。
+        ("Tick.outputs:tick", "Gate.inputs:execIn"),
+        ("Gate.outputs:execOut", "PubJoint.inputs:execIn"),
+        ("Gate.outputs:execOut", "Odom.inputs:execIn"),
+        ("Gate.outputs:execOut", "PubTF.inputs:execIn"),
+        ("Gate.outputs:execOut", "PubSensorTF.inputs:execIn"),
+        ("Gate.outputs:execOut", "PubCamTF.inputs:execIn"),
         ("Odom.outputs:execOut", "PubOdom.inputs:execIn"),
         ("Odom.outputs:position", "PubOdom.inputs:position"),
         ("Odom.outputs:orientation", "PubOdom.inputs:orientation"),
         ("Odom.outputs:linearVelocity", "PubOdom.inputs:linearVelocity"),
         ("Odom.outputs:angularVelocity", "PubOdom.inputs:angularVelocity"),
-        ("SimTime.outputs:simulationTime", "PubClock.inputs:timeStamp"),
         ("SimTime.outputs:simulationTime", "PubJoint.inputs:timeStamp"),
         ("SimTime.outputs:simulationTime", "PubOdom.inputs:timeStamp"),
         ("SimTime.outputs:simulationTime", "PubTF.inputs:timeStamp"),
         ("SimTime.outputs:simulationTime", "PubSensorTF.inputs:timeStamp"),
         ("SimTime.outputs:simulationTime", "PubCamTF.inputs:timeStamp"),
-        ("Ctx.outputs:context", "PubClock.inputs:context"),
         ("Ctx.outputs:context", "PubJoint.inputs:context"),
         ("Ctx.outputs:context", "PubOdom.inputs:context"),
         ("Ctx.outputs:context", "PubTF.inputs:context"),
@@ -318,12 +320,14 @@ def setup():
               % (ENABLE_RGB, ENABLE_DEPTH, CAM_FRAME_SKIP, CAM_FRAME_SKIP + 1))
 
     # ---------- 6. Mid360 点云图 (PhysX) ----------
-    # PhysX 雷达：IsaacReadLidarPointCloud 读取一整圈点云 -> ROS2PublishPointCloud
+    # PhysX 雷达必须由 OnPlaybackTick 读取；headless runner 会在初始化前临时设
+    # rotationRate=0（schema 定义为 all rays at once），使每个渲染抽帧得到完整一圈。
     og.Controller.edit(
         {"graph_path": "/ActionGraph_lidar", "evaluator_name": "execution"},
         {
             og.Controller.Keys.CREATE_NODES: [
                 ("Tick", "omni.graph.action.OnPlaybackTick"),
+                ("Gate", "isaacsim.core.nodes.IsaacSimulationGate"),
                 ("Ctx", "isaacsim.ros2.bridge.ROS2Context"),
                 ("SimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
                 ("ReadLidar", "isaacsim.sensors.physx.IsaacReadLidarPointCloud"),
@@ -337,7 +341,8 @@ def setup():
                 ("PubPC.inputs:frameId", "livox_frame"),
             ],
             og.Controller.Keys.CONNECT: [
-                ("Tick.outputs:tick", "ReadLidar.inputs:execIn"),
+                ("Tick.outputs:tick", "Gate.inputs:execIn"),
+                ("Gate.outputs:execOut", "ReadLidar.inputs:execIn"),
                 ("ReadLidar.outputs:execOut", "PubPC.inputs:execIn"),
                 ("ReadLidar.outputs:data", "PubPC.inputs:data"),
                 ("SimTime.outputs:simulationTime", "PubPC.inputs:timeStamp"),
@@ -345,10 +350,12 @@ def setup():
             ],
         },
     )
-    print("[OK] Mid360 point cloud graph created (PhysX)")
+    print("[OK] Mid360 point cloud graph created (OnPlaybackTick; headless full-scan adaptation)")
 
-    # ---------- 7. IMU 图 ----------
-    # IMU 用 OnPhysicsStep(每个物理步触发一次)而不是 OnPlaybackTick(每渲染帧触发)：
+    # ---------- 7. IMU + 均匀 /clock 物理步图 ----------
+    # IMU 每个物理步发布；/clock 也由物理步驱动，但经 Gate 每 10 步发布一次：
+    # 默认物理 200Hz -> /clock 20Hz。这样避免 standalone 的双 playback tick 造成
+    # /clock 成对突发，也避免直接以 200Hz 发布 ROS clock 拖慢 RTF。
     #   - 与渲染/相机抽帧解耦：headless 下即使把渲染频率降到 ~10Hz(RENDER_EVERY)，IMU
     #     仍按【物理步频】发布(真实 Mid360 IMU 是 200Hz)，不会被一起拖到 ~10Hz。
     #   - 天然去重：OnPlaybackTick 在无头 step() 里一帧会被评估两次，导致 /livox/imu
@@ -368,6 +375,8 @@ def setup():
                 ("SimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
                 ("ReadImu", "isaacsim.sensors.physics.IsaacReadIMU"),
                 ("PubImu", "isaacsim.ros2.bridge.ROS2PublishImu"),
+                ("ClockGate", "isaacsim.core.nodes.IsaacSimulationGate"),
+                ("PubClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
             ],
             og.Controller.Keys.SET_VALUES: [
                 ("ReadImu.inputs:imuPrim", [Sdf.Path(IMU_PRIM)]),
@@ -375,20 +384,26 @@ def setup():
                 # （与雷达同帧），供 FAST-LIO 直接使用。
                 ("PubImu.inputs:topicName", "/livox/imu"),
                 ("PubImu.inputs:frameId", "livox_frame"),
+                ("ClockGate.inputs:step", 10),
+                ("PubClock.inputs:topicName", "/clock"),
             ],
             og.Controller.Keys.CONNECT: [
                 # OnPhysicsStep 的执行输出口叫 outputs:step(不是 OnPlaybackTick 的 outputs:tick)
                 ("Tick.outputs:step", "ReadImu.inputs:execIn"),
+                ("Tick.outputs:step", "ClockGate.inputs:execIn"),
+                ("ClockGate.outputs:execOut", "PubClock.inputs:execIn"),
                 ("ReadImu.outputs:execOut", "PubImu.inputs:execIn"),
                 ("ReadImu.outputs:linAcc", "PubImu.inputs:linearAcceleration"),
                 ("ReadImu.outputs:angVel", "PubImu.inputs:angularVelocity"),
                 ("ReadImu.outputs:orientation", "PubImu.inputs:orientation"),
                 ("SimTime.outputs:simulationTime", "PubImu.inputs:timeStamp"),
+                ("SimTime.outputs:simulationTime", "PubClock.inputs:timeStamp"),
                 ("Ctx.outputs:context", "PubImu.inputs:context"),
+                ("Ctx.outputs:context", "PubClock.inputs:context"),
             ],
         },
     )
-    print("[OK] IMU graph created (OnPhysicsStep -> /livox/imu 按物理步频发布，已与渲染解耦/去重)")
+    print("[OK] physics graph created (IMU=每个物理步；/clock=物理步 Gate 后均匀 20Hz)")
     cam_topics = ""
     if ENABLE_RGB:
         cam_topics += " /zed/rgb/image_raw"

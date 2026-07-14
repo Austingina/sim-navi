@@ -10,15 +10,20 @@
 
 ```
 .
-├── scene.usd                 # 主场景：引用机器人 + 碰撞 usdz，含 georef 元数据
-├── open_isaac_scene.sh       # 一键启动 Isaac Sim 并直接打开 scene.usd（支持 --headless 串流）
+├── scene.usd                 # 主场景（zhichengAB）：引用机器人 + 碰撞 usdz，含 georef 元数据
+├── scene_seg.usd             # NuRec 相机场景（无头默认针对它调好了频率/视口）
+├── run_isaacsim.sh           # 【主入口】干净环境启动 Isaac：--gui / --stream / --headless
+├── isaac_headless.py         # --headless 用的 standalone 无头运行器（自动 Play、只走 ROS）
+├── open_isaac_scene.sh       # 旧脚本：仅在 GUI/串流里看画面，不接 ROS 管线
 ├── r1_pro/                   # 机器人资产（URDF / mesh / usd），可直接 clone 即用
 ├── ros2_sensors/             # ROS 2 端：节点 / launch / RViz / 详细 README
 │   ├── gps_publisher.py          # odom → /gps/fix（自动读 georef.json）
 │   ├── base_controller.py        # /cmd_vel → /joint_command（swerve 运动学）
-│   ├── setup_sensors.py          # Isaac Script Editor：建传感器 + ROS 发布图
+│   ├── setup_sensors.py          # Isaac Script Editor：建传感器 + ROS 发布图（幂等建图脚本）
 │   ├── setup_control.py          # Isaac Script Editor：建 Articulation 控制图
-│   ├── bringup.launch.py         # 起纯节点（GPS + 控制器）
+│   ├── lidar_self_filter.py      # /livox/lidar_raw → /livox/points（裁掉机身自身点）
+│   ├── pc2_to_livox.py           # /livox/points → /livox/lidar（livox CustomMsg，给 FAST-LIO）
+│   ├── bringup.launch.py         # 起纯节点（GPS + 控制器 + 雷达自裁剪 + CustomMsg 转换）
 │   └── r1_pro.rviz
 ├── scene_tools/             # 场景碰撞地图 + 地理配准的离线生成工具
 │   ├── add_collision_to_usdz.py  # 给高斯 usdz 加隐藏碰撞网格 + 焊入 georef
@@ -39,34 +44,49 @@
 ## 环境要求
 
 - **Isaac Sim 5.1**（含 `isaacsim.ros2.bridge`、`omni.nurec`）
-- **ROS 2 Humble**：`source /opt/ros/humble/setup.bash`，与 Isaac 同一 ROS 网络
+- **ROS 2 Humble**：`source /opt/ros/humble/setup.bash`
+- **DDS 必须与 Isaac 一致**：系统默认 CycloneDDS（`~/.bashrc` 里 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`）。
+  `run_isaacsim.sh` 已把 Isaac 也对齐到 CycloneDDS（Isaac 5.1 bridge 自带该库）并继承 `CYCLONEDDS_URI`。
+  两边 RMW 或 `ROS_DOMAIN_ID` 不一致会**互不发现**（话题能 `ros2 topic list` 到，但收不到任何数据）。
 - RViz 卫星底图：`sudo apt install ros-humble-rviz-satellite`
 - 离线工具依赖：`pip install -r requirements.txt`（或用 Isaac 自带 python）
 
 ## 快速开始
 
-1. 启动 Isaac Sim 并直接打开 `scene.usd`，然后点 **Play**（传感器图/控制图已固化在 USD 里，
-   开箱即用；只有改传感器/控制配置时才需重跑 `ros2_sensors/setup_sensors.py` / `setup_control.py`）。
-   - 手动：正常打开 Isaac Sim 后 `File > Open` 选 `scene.usd`；
-   - 一键（推荐）：仓库根目录下 `./open_isaac_scene.sh`，启动即自动加载 `scene.usd`；
-     加 `--headless` 则无头运行（WebRTC 串流，用 Isaac Sim Streaming Client 远程查看）。
-     ```bash
-     ./open_isaac_scene.sh                    # 有窗口
-     ./open_isaac_scene.sh --headless         # 无头 + 串流
-     ./open_isaac_scene.sh /path/to/其它.usd  # 打开别的 usd
-     ```
-     > 原理：`open_isaac_scene.sh` 调 `isaac-sim.sh --/app/file/openPath=<usd 绝对路径>`
-     > 启动时自动打开场景（`--headless` 则换成 `isaac-sim.streaming.sh` 走 WebRTC），
-     > 并顺带跳过一处 RTX 驱动版本误判。若以 root 运行需在脚本命令末尾加 `--allow-root`。
-     > （`scene_tools/run_isaacsim*.sh` 是旧机器留下的同类脚本，路径指向不存在的 `~/isim`，已废弃。）
-2. 终端（仓库根目录下）：
-   ```bash
-   source /opt/ros/humble/setup.bash
-   ros2 launch ros2_sensors/start_simulation.launch.py
-   ```
-3. 键盘遥控：`ros2 run teleop_twist_keyboard teleop_twist_keyboard`
+用仓库根目录的 **`run_isaacsim.sh`** 启动 Isaac（它会退 conda、清库路径、把 Isaac 的 DDS
+对齐到系统 CycloneDDS）。三种模式：
 
-完整说明见 [`ros2_sensors/README.md`](ros2_sensors/README.md)。
+```bash
+./run_isaacsim.sh --headless scene_seg.usd    # 【推荐】纯无头：自动 Play、只走 ROS、最省 GPU
+./run_isaacsim.sh --gui      scene.usd         # 本机物理显示器开 GUI
+./run_isaacsim.sh --stream   scene.usd         # 无头 + WebRTC 串流（Isaac Sim Streaming Client 远程看）
+```
+
+传感器图/控制图已固化在 USD 里，开箱即用；只有改传感器/控制配置时才回去重跑
+`ros2_sensors/setup_sensors.py` / `setup_control.py`（幂等建图脚本，跑完存盘）。
+
+无头模式常用环境变量（`scene_seg.usd` 已给好默认值，可用 env 覆盖）：
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `ISAAC_PHYSICS_HZ` | 200 | 物理步频；IMU 与 `/clock` 都按物理步走 |
+| `ISAAC_HZ` | 0 | 实时节流目标(Hz)；`0`=不节流跑满，设 `200` 则 RTF≈1 |
+| `ISAAC_RENDER_HZ` | 10 | 渲染抽帧频率；雷达 / odom / tf / 相机随它 |
+| `ISAAC_CLOCK_HZ` | 20 | `/clock` 发布频率（物理步 + Gate 均匀降频） |
+| `ISAAC_VIEWPORT` | 0 | `0`=不渲染(只出 IMU/雷达等)；`1`=开相机渲染 |
+
+再起 ROS 周边（**系统终端，需与 Isaac 同一 CycloneDDS 和 `ROS_DOMAIN_ID`**）：
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 launch ros2_sensors/bringup.launch.py             # GPS + 控制器 + 雷达自裁剪 + CustomMsg 转换
+ros2 run teleop_twist_keyboard teleop_twist_keyboard   # 键盘遥控
+```
+
+> 只想在 GUI 里看看画面、不接 ROS 管线时，可用旧脚本 `./open_isaac_scene.sh`（只调
+> `isaac-sim.sh` 打开场景，不处理 DDS / 传感器发布）。
+
+完整说明（话题、频率、DDS、TF、GPS、碰撞地图生成）见 [`ros2_sensors/README.md`](ros2_sensors/README.md)。
 
 ## 资产与数据（**未纳入 Git**）
 

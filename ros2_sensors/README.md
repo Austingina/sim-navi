@@ -4,8 +4,9 @@
 接入 ROS 2 (Humble)，打通**传感器**（RGBD 相机 / Mid360 雷达 / IMU / GPS）、
 **底盘控制**（swerve）和**真实地理对齐的 GPS**。
 
-> ROS 端环境：`source /opt/ros/humble/setup.bash`，且与 Isaac Sim 同一 ROS 网络。
-> Isaac 端脚本：在 `Window > Script Editor` 里粘贴运行（Play 前）。
+> ROS 端环境：`source /opt/ros/humble/setup.bash`，且与 Isaac **同一 DDS(CycloneDDS) + 同 `ROS_DOMAIN_ID`**。
+> 启动 Isaac 用仓库根的 `run_isaacsim.sh`（`--gui` / `--stream` / `--headless`，它会把 Isaac 的 DDS 对齐到 CycloneDDS）。
+> `setup_sensors.py` / `setup_control.py` 是幂等建图脚本，只在改传感器/控制配置时才在 `Window > Script Editor` 里跑（Play 前）。
 
 ---
 
@@ -28,6 +29,8 @@
 
 | 文件 | 跑在哪 | 作用 |
 |---|---|---|
+| `run_isaacsim.sh` | 系统终端(仓库根) | 【主入口】干净环境启动 Isaac：`--gui`/`--stream`/`--headless`，并把 Isaac 对齐到 CycloneDDS |
+| `isaac_headless.py` | `run_isaacsim.sh --headless` 调 | standalone 无头运行器：自动 Play、按物理步步进、只走 ROS（最省 GPU） |
 | `setup_sensors.py` | Isaac Script Editor | 建相机/雷达/IMU + 各 ROS2 发布图（/clock /odom_gt /tf /joint_states 等） |
 | `setup_control.py` | Isaac Script Editor | 建 Articulation 控制图（订阅 `/joint_command`）+ 配关节 Drive |
 | `base_controller.py` | 系统 ROS2 | swerve 运动学：`/cmd_vel` → `/joint_command` |
@@ -42,11 +45,15 @@
 
 ## 3. 启动顺序
 
-### 第 1 步：Isaac Sim 打开场景（Play 前）
-打开 `../scene.usd`，直接点 **Play**（务必 Play，否则 `/clock` 不走、TF 会时间外推报错）。
-
-> 懒人法：仓库根目录下 `./open_isaac_scene.sh`（加 `--headless` 走 WebRTC 串流），
-> 启动 Isaac Sim 时自动加载 `scene.usd`，省去手动 `File > Open`。
+### 第 1 步：启动 Isaac
+仓库根目录下用 `run_isaacsim.sh` 起（干净环境 + DDS 对齐 CycloneDDS）：
+```bash
+./run_isaacsim.sh --headless scene_seg.usd   # 纯无头：自动 Play、只走 ROS（推荐做 SLAM/导航）
+./run_isaacsim.sh --gui      scene.usd        # GUI：起来后需手动点 Play
+./run_isaacsim.sh --stream   scene.usd        # WebRTC 串流：在 Streaming Client 里点 Play
+```
+> `--headless` 会自动 Play；`--gui` / `--stream` 记得**手动点 Play**，否则 `/clock` 不走、TF 会时间外推报错。
+> 只想在 GUI 里看画面(不接 ROS)时用旧脚本 `./open_isaac_scene.sh`。
 
 > **传感器图和控制图已经固化保存在 `scene.usd` 里**（OmniGraph + 传感器 prim 都是 USD 持久化的），
 > **平时开箱即用，不必再跑 `setup_sensors.py` / `setup_control.py`。**
@@ -59,16 +66,15 @@
 > | 控制（关节 Drive / 订阅话题 / 运动学） | `setup_control.py` |
 > | 换机器人 prim 路径 / 重新导入机器人 / 图被误删 | 对应脚本（路径要和 Stage 里 `ROBOT_PRIM` 一致） |
 
-### 第 2 步：一键起 ROS 周边 + 可视化（系统终端，仓库根目录下）
+### 第 2 步：一键起 ROS 周边（系统终端，仓库根目录下）
+> ⚠️ 这个终端必须和 Isaac **同一 DDS(CycloneDDS) + 同 `ROS_DOMAIN_ID`**，否则能 `ros2 topic list` 到却收不到数据。
 ```bash
 source /opt/ros/humble/setup.bash
-ros2 launch ros2_sensors/start_simulation.launch.py
+ros2 launch ros2_sensors/bringup.launch.py
 ```
 
-> 只要纯节点（无 GUI，跑导航/无头）用 `ros2 launch ros2_sensors/bringup.launch.py` 即可。
-
 > **机器人/传感器 TF 由 Isaac 侧 `ActionGraph_robot` 统一发布**：
-> - `PubRawTF`：`odom → base_link`（来自里程计，动态）—— **默认已关**（`setup_sensors.py` 里 `PUBLISH_ODOM_TF=False`），让 FAST-LIO 等定位栈独占 `odom→base_link`，避免 base_link 双父帧冲突。要 Isaac 真值 TF 时改回 `True` 并重跑脚本存盘。`/odom_gt` 话题不受影响，照常发布。
+> - `odom → base_link`：**Isaac 不发这条 TF**（`setup_sensors.py` 里 `PUBLISH_ODOM_TF=False`，且已从 `scene.usd`/`scene_seg.usd` 删掉 `PubRawTF` 节点），交给 FAST-LIO 等定位栈独占，避免 base_link 双父帧冲突（`TF_MULTIPLE_AUTHORITY`）。`/odom_gt` **话题**仍照常发布(真值里程计)。要 Isaac 真值 TF 时把 `PUBLISH_ODOM_TF=True` 重跑脚本存盘。
 > - `PubTF`：`base_link →` 各子连杆（arms/torso/wheels/zed 等，动态；**必须设 parentPrim=base_link**，否则默认发 `world→base_link` 会冲突）
 > - `PubSensorTF`（`/tf_static`）：`base_link→livox_frame/imu`
 > - `PubCamTF`（`/tf_static`）：`zed_link→zed_camera`
@@ -133,17 +139,18 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 | 话题 | 类型 | 来源 |
 |---|---|---|
-| `/clock` | rosgraph_msgs/Clock | Isaac |
-| `/joint_states` | sensor_msgs/JointState | Isaac |
-| `/odom_gt` | nav_msgs/Odometry | Isaac（真值里程计；供 GPS/精度对比，非 SLAM 用） |
-| `/tf`, `/tf_static` | tf2_msgs/TFMessage | Isaac(odom→base_link, base_link→livox_frame/imu, zed_link→zed_camera) + gps_publisher(map→odom) |
-| `/zed/rgb/image_raw` | sensor_msgs/Image | Isaac 相机 |
-| `/zed/depth/image_rect_raw` | sensor_msgs/Image | Isaac 相机 |
-| `/zed/camera_info` | sensor_msgs/CameraInfo | Isaac 相机 |
-| `/livox/lidar_raw` | sensor_msgs/PointCloud2 | Isaac PhysX 雷达（含机身自身点，frame_id=livox_frame） |
+| `/clock` | rosgraph_msgs/Clock | Isaac（20Hz，物理步 + Gate） |
+| `/joint_states` | sensor_msgs/JointState | Isaac（随渲染帧） |
+| `/odom_gt` | nav_msgs/Odometry | Isaac 真值里程计（≈10Hz；供 GPS/精度对比，非 SLAM 用） |
+| `/tf` | tf2_msgs/TFMessage | Isaac：`base_link →` 各子连杆（**不含 odom→base_link**，交给 FAST-LIO） |
+| `/tf_static` | tf2_msgs/TFMessage | Isaac：base_link→livox_frame/imu、zed_link→zed_camera |
+| `/livox/lidar_raw` | sensor_msgs/PointCloud2 | Isaac PhysX 雷达（≈10Hz，含机身自身点，frame_id=livox_frame） |
 | `/livox/points` | sensor_msgs/PointCloud2 | `lidar_self_filter.py`（裁掉机身自身点，RViz 用这个） |
 | `/livox/lidar` | livox_ros_driver2/CustomMsg | `pc2_to_livox.py`（与真实驱动一致，给 FAST-LIO 等 SLAM） |
-| `/livox/imu` | sensor_msgs/Imu | Isaac IMU（与雷达同帧 livox_frame，供 FAST-LIO） |
+| `/livox/imu` | sensor_msgs/Imu | Isaac IMU（**200Hz**，与雷达同帧 livox_frame，供 FAST-LIO） |
+| `/zed/rgb/image_raw` | sensor_msgs/Image | Isaac 相机（**仅 `ISAAC_VIEWPORT=1` 开渲染时**） |
+| `/zed/depth/image_rect_raw` | sensor_msgs/Image | Isaac 相机（`ENABLE_DEPTH=True` 且开渲染时） |
+| `/zed/camera_info` | sensor_msgs/CameraInfo | Isaac 相机（随渲染） |
 | `/gps/fix` | sensor_msgs/NavSatFix | `gps_publisher.py` |
 | `/cmd_vel` | geometry_msgs/Twist | 你 / 导航栈 |
 | `/joint_command` | sensor_msgs/JointState | `base_controller.py` |
@@ -193,7 +200,7 @@ ros2 launch .../bringup.launch.py spawn_x:=30 spawn_y:=-12
    ```
 > `zhicheng-square`：新区域与旧场景**共享原点(平移=0)**，仅绕 Z **转 90°** 对齐 UTM/ENU
 > （之前 GPS 偏方向就是缺这 90°）。scale=1。georef 已焊进 usdz 的 `customLayerData['georef']`，
-> 与 `scene_tools/georef_square.json`、`scene_zhicheng_square.usd` 三处一致。
+> 与 `scene_tools/georef_square.json` 一致（对应的 `scene_zhicheng_square.usd` 已从仓库下线）。
 > （`align_new_scene.py` 三点实测 ≈91.17°、RMSE≈0.21m，取整用 90°、暂不加平移。）
 换出生点后读新坐标（Play 前在 Script Editor 跑）：
 ```python
@@ -220,7 +227,14 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
   不依赖 RTX 渲染几何 —— 所以**高斯泼溅场景里没碰撞代理的物体扫不到**，
   机器人/地面/有 CollisionAPI 的物体才有点。近似 Mid360：360°×59°、high_lod 多线。
   想扫到环境，需给场景碰撞代理 mesh 开 CollisionAPI（见 `../scene_tools/add_collision_to_usdz.py`）。
-- **IMU**：与雷达同位置（livox_frame），topic `/livox/imu`。
+  - **频率 ≈10Hz**（由 `ISAAC_RENDER_HZ` 决定，不是 rotationRate）；无头下 `isaac_headless.py` 把
+    `rotationRate` 设 0 = 每次读取直接吐完整一圈。
+  - ⚠️ **无逐点时间戳**：整圈点同一时刻/同一时间戳，FAST-LIO 的帧内运动去畸变实际失效。中低速
+    测试无碍；高速/急转会有点云拖影（PhysX 雷达给不了逐点时间，要更真只能让机器人跑慢些）。
+- **IMU**：与雷达同位置（livox_frame），topic `/livox/imu`，**200Hz**（挂 `OnPhysicsStep` 按物理步发布，
+  与渲染抽帧解耦）。`/clock` 同样走物理步、经 Gate 降到 20Hz。
+- **去重（无头特有）**：standalone 每个渲染步会评估两次 `OnPlaybackTick`，机器人图/雷达图都用
+  `IsaacSimulationGate(step=2)` 去重，否则 `/tf`·`/odom_gt` 会成对发相同时间戳（tf2 报 `TF_REPEATED_DATA`）。
 - **GPS**：Isaac 无原生 GPS，用 odom 真值换算（见第 5 节）。
 
 ---
@@ -229,6 +243,8 @@ print("spawn_x, spawn_y =", *m.ExtractTranslation()[:2])
 
 | 现象 | 原因 / 解决 |
 |---|---|
+| FAST-LIO/RViz 收不到 Isaac 话题（能 `ros2 topic list` 到但无数据） | Isaac 与消费端 **DDS 不一致**。两边都要 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` + 同 `ROS_DOMAIN_ID`；Isaac 用 `run_isaacsim.sh` 起会自动对齐 CycloneDDS |
+| `/tf`·`/odom_gt` 时间戳成对重复（tf2 报 `TF_REPEATED_DATA`） | 无头双 tick 未去重；确认 `scene*.usd` 的 `ActionGraph_robot` 有 `Gate` 节点、`isaac_headless.py` 把它 step 设 2 |
 | 点云 `width: 0` | RTX/PhysX 之分 + 场景无碰撞几何；本项目已用 PhysX，确认目标物有 CollisionAPI |
 | RViz 点云不显示 | TF `base_link→livox_frame` 由 setup_sensors 发 `/tf_static`(需重跑最新版)；或 QoS 设 **Best Effort** |
 | `could not transform livox_frame to odom` | 重跑最新 `setup_sensors.py`(它发 livox_frame/imu 的 /tf_static) |
