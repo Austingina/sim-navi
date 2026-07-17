@@ -99,8 +99,8 @@ if not _viewport:
     _render_products = [p for p in _stage.Traverse() if p.IsA(UsdRender.Product)]
     for _rp in _render_products:
         _rp.SetActive(False)
-    print(f"[headless] 相机图已禁用，停用 {len(_render_products)} 个 render product "
-          "(ISAAC_VIEWPORT=0)。")
+    # print(f"[headless] 相机图已禁用，停用 {len(_render_products)} 个 render product "
+    #       "(ISAAC_VIEWPORT=0)。")
 
 # 关键：standalone 无头里必须用 SimulationContext 来步进物理，
 # 光 timeline.play()+simulation_app.update() 不会推进仿真时间(current_time 恒为 0)。
@@ -127,6 +127,20 @@ _lidar_full_scan = _os.environ.get("ISAAC_LIDAR_FULL_SCAN", "1").strip().lower()
     not in ("0", "false", "no", "off")
 if _lidar_full_scan:
     _lidar_prim.GetAttribute("rotationRate").Set(0.0)
+# 雷达角分辨率(度)。默认 0=不改(用 USD 里的 0.4°/1.0° ≈ 53k 点)。点数 = (360/H)×(59/V)。
+# 点太多会拖累 WLAN 传输 + 下游 pc2_to_livox 的逐点转换(它是 O(点数) 的 Python 循环) ->
+# /livox/lidar 掉频。建议 ISAAC_LIDAR_HRES=0.8 ISAAC_LIDAR_VRES=1.5 -> ~18k 点(接近真机 Mid360)。
+_lidar_hres = float(_os.environ.get("ISAAC_LIDAR_HRES", "0"))
+_lidar_vres = float(_os.environ.get("ISAAC_LIDAR_VRES", "0"))
+if _lidar_hres > 0:
+    _lidar_prim.GetAttribute("horizontalResolution").Set(_lidar_hres)
+if _lidar_vres > 0:
+    _lidar_prim.GetAttribute("verticalResolution").Set(_lidar_vres)
+if _lidar_hres > 0 or _lidar_vres > 0:
+    _h = _lidar_hres or 0.4
+    _v = _lidar_vres or 1.0
+    print(f"[headless] 雷达分辨率 H={_h:g}° V={_v:g}° -> 约 {int(360 / _h) * int(59 / _v)} 点/帧 "
+          f"(ISAAC_LIDAR_HRES/VRES) —— 减 WLAN 带宽和下游转换负担。")
 _lidar_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_lidar/Gate")
 if _lidar_gate.IsValid():
     # standalone 的 step(render=True) 会产生两个 playback tick；仅无头运行时设2去重。
@@ -144,6 +158,92 @@ _clock_step = max(1, round(PHYS_HZ / CLOCK_HZ)) if CLOCK_HZ > 0 else 1
 _clock_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_imu/ClockGate")
 if _clock_gate.IsValid():
     _clock_gate.GetAttribute("inputs:step").Set(_clock_step)
+
+# ---- 抗翻车物理调参 ----
+# 地面是重建碰撞(zhichengAB-collision.usdz)，难免小尖刺/凸起，轮子一磕就被弹起/掀翻。
+# 以下全部只作用在【机器人子树】，不动地面碰撞 —— PhysX 雷达仍看真实(带起伏)地面。
+# 全 env 可调、默认 0=不改；都必须在 initialize_physics() 之前设(建物理视图时读取属性)。
+#   ISAAC_MAX_DEPEN_VEL        刚体解穿透速度上限(m/s)：轮子陷入尖刺时别被猛地"顶飞"。建议 1~5。
+#   ISAAC_BASE_ANG_DAMP        base_link 角阻尼：直接泄掉倾倒角速度，【抗翻最有效】。建议 5~15。
+#                              (副作用：太大转向会变肉，因为 swerve 靠推底盘转向)
+#   ISAAC_SOLVER_POS_ITERS     articulation 位置解算迭代数：接触更稳、少"抖飞"。建议 32~64。
+#   ISAAC_WHEEL_CONTACT_OFFSET 轮子碰撞体接触边距(m)：提前接触、骑过小坑而非磕进去。建议 0.02~0.05。
+#   ISAAC_PHYS_MATERIAL=1      给地面+轮子绑物理材质：restitution=0(不弹) + combine=min。默认开。
+#   ISAAC_RESTITUTION          回弹系数，默认 0(撞尖刺不反弹)。
+#   ISAAC_GROUND_FRICTION_DYN/STAT 摩擦(默认 0.6/0.7)。【注意】摩擦不能调高：高摩擦让轮子咬住
+#                              凸起、侧向力更大 -> 翻得更狠。材质主要为了钉 restitution=0 + min 组合。
+_max_depen = float(_os.environ.get("ISAAC_MAX_DEPEN_VEL", "1"))
+_base_angdamp = float(_os.environ.get("ISAAC_BASE_ANG_DAMP", "10"))
+_solver_pos = int(_os.environ.get("ISAAC_SOLVER_POS_ITERS", "48"))
+_wheel_coff = float(_os.environ.get("ISAAC_WHEEL_CONTACT_OFFSET", "0.03"))
+_phys_material = _os.environ.get("ISAAC_PHYS_MATERIAL", "1").strip().lower() \
+    not in ("0", "false", "no", "off")
+_fric_dyn = float(_os.environ.get("ISAAC_GROUND_FRICTION_DYN", "0.6"))
+_fric_stat = float(_os.environ.get("ISAAC_GROUND_FRICTION_STAT", "0.7"))
+_restitution = float(_os.environ.get("ISAAC_RESTITUTION", "0"))
+if (_max_depen > 0 or _base_angdamp > 0 or _solver_pos > 0 or _wheel_coff > 0
+        or _phys_material):
+    from pxr import Usd, UsdPhysics, PhysxSchema  # noqa: PLC0415
+    _stg = omni.usd.get_context().get_stage()
+    _robot_root = _stg.GetPrimAtPath("/World/r1_pro_with_gripper")
+    _n_rb = _n_coff = 0
+    _wheel_colliders = []
+    if _robot_root.IsValid():
+        for _p in Usd.PrimRange(_robot_root):
+            if _max_depen > 0 and _p.HasAPI(UsdPhysics.RigidBodyAPI):
+                PhysxSchema.PhysxRigidBodyAPI.Apply(_p) \
+                    .CreateMaxDepenetrationVelocityAttr().Set(_max_depen)
+                _n_rb += 1
+            # 收集轮子碰撞体(按路径含 "wheel" 判断，覆盖 collisions 子 prim)，用于接触边距 + 绑材质。
+            if _p.HasAPI(UsdPhysics.CollisionAPI) \
+                    and "wheel" in _p.GetPath().pathString.lower():
+                _wheel_colliders.append(_p)
+                if _wheel_coff > 0:
+                    PhysxSchema.PhysxCollisionAPI.Apply(_p) \
+                        .CreateContactOffsetAttr().Set(_wheel_coff)
+                    _n_coff += 1
+    # base_link = articulation 根：加角阻尼(抗翻) + 提高解算器迭代(接触更稳)
+    _base = _stg.GetPrimAtPath("/World/r1_pro_with_gripper/base_link")
+    if _base.IsValid():
+        if _base_angdamp > 0:
+            PhysxSchema.PhysxRigidBodyAPI.Apply(_base) \
+                .CreateAngularDampingAttr().Set(_base_angdamp)
+        if _solver_pos > 0:
+            _aapi = PhysxSchema.PhysxArticulationAPI.Apply(_base)
+            _aapi.CreateSolverPositionIterationCountAttr().Set(_solver_pos)
+            _aapi.CreateSolverVelocityIterationCountAttr().Set(max(1, _solver_pos // 4))
+    print(f"[headless] 抗翻车调参: maxDepenVel={_max_depen:g}({_n_rb}刚体) "
+          f"baseAngDamp={_base_angdamp:g} solverPosIters={_solver_pos} "
+          f"wheelContactOffset={_wheel_coff:g}({_n_coff}轮)。")
+
+    # 物理材质：restitution=0(撞尖刺不反弹) + combine=min(取两面较低摩擦，行为确定且不咬凸起)。
+    # 绑到轮子(路径已知) + 地面碰撞体(搜 CollisionMesh，找不到也没关系:min 组合下轮子=0 回弹即够)。
+    if _phys_material:
+        from pxr import UsdShade  # noqa: PLC0415
+        _mat = UsdShade.Material.Define(_stg, "/World/PhysicsMaterials/ground_wheel")
+        _mprim = _mat.GetPrim()
+        _pm = UsdPhysics.MaterialAPI.Apply(_mprim)
+        _pm.CreateStaticFrictionAttr().Set(_fric_stat)
+        _pm.CreateDynamicFrictionAttr().Set(_fric_dyn)
+        _pm.CreateRestitutionAttr().Set(_restitution)
+        _pxm = PhysxSchema.PhysxMaterialAPI.Apply(_mprim)
+        _pxm.CreateFrictionCombineModeAttr().Set("min")
+        _pxm.CreateRestitutionCombineModeAttr().Set("min")
+        _targets = list(_wheel_colliders)
+        _ground = None
+        for _p in _stg.Traverse():
+            if _p.GetName() == "CollisionMesh" and _p.HasAPI(UsdPhysics.CollisionAPI):
+                _ground = _p
+                break
+        if _ground is not None:
+            _targets.append(_ground)
+        for _tp in _targets:
+            UsdShade.MaterialBindingAPI.Apply(_tp).Bind(
+                _mat, UsdShade.Tokens.weakerThanDescendants, "physics")
+        print(f"[headless] 物理材质: dynFric={_fric_dyn:g} statFric={_fric_stat:g} "
+              f"restitution={_restitution:g} combine=min -> 绑定 {len(_targets)} 个碰撞体"
+              f"(轮 {len(_wheel_colliders)}{' + 地面' if _ground is not None else ' , 地面未找到'})。")
+
 sim_context = SimulationContext(physics_dt=PHYS_DT, rendering_dt=PHYS_DT,
                                 stage_units_in_meters=1.0)
 sim_context.initialize_physics()   # 建立物理视图

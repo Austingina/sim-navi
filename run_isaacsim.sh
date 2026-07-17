@@ -102,13 +102,17 @@ fi
 #   HZ=0             不主动限速；isaac_headless.py 内封顶物理步频(ISAAC_PHYSICS_HZ，默认200Hz)
 #   RENDER_HZ=10     standalone 每帧有两个 playback tick：状态图≈20Hz、雷达去重后≈10Hz
 #   CLOCK_HZ=20      /clock 由物理步 Gate 均匀发布；IMU=200Hz；二者不受渲染抽帧影响
-if [[ "$MODE" == "headless" && "$(basename "${TARGET:-}")" == "scene_seg.usd" ]]; then
+#   MAX_DEPEN_VEL=2  刚体解穿透速度上限(m/s)：抑制重建地面小凸起把机器人弹飞/掀翻；
+#                    还弹就调小(1)，太肉/陷地就调大(3~5)；设 0 = 不改(用 PhysX 默认)
+if [[ "$MODE" == "headless" && "$(basename "${TARGET:-}")" == scene_seg*.usd ]]; then
     export ISAAC_VIEWPORT="${ISAAC_VIEWPORT:-0}"
     export ISAAC_HZ="${ISAAC_HZ:-0}"
     export ISAAC_RENDER_HZ="${ISAAC_RENDER_HZ:-10}"
     export ISAAC_CLOCK_HZ="${ISAAC_CLOCK_HZ:-20}"
+    export ISAAC_MAX_DEPEN_VEL="${ISAAC_MAX_DEPEN_VEL:-2}"
     echo "[info] scene_seg 相机模式: ISAAC_VIEWPORT=$ISAAC_VIEWPORT"
     echo "[info]   ISAAC_HZ=$ISAAC_HZ  ISAAC_RENDER_HZ=$ISAAC_RENDER_HZ  ISAAC_CLOCK_HZ=$ISAAC_CLOCK_HZ"
+    echo "[info]   ISAAC_MAX_DEPEN_VEL=$ISAAC_MAX_DEPEN_VEL (刚体解穿透速度上限,抑制弹飞)"
 fi
 
 case "$MODE" in

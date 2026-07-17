@@ -95,6 +95,31 @@ def load_obj(path):
     return verts, faces
 
 
+def voxel_cluster(verts, faces, voxel):
+    """按 voxel 大小的网格对顶点聚类(每格取格内顶点均值作代表)，重映射三角面、丢弃塌陷三角形。
+    等价于在 voxel 尺度做低通/去噪：亚-voxel 的重建噪声(绊倒轮子的小尖刺)被并掉，
+    大于 voxel 的真实地形(室外坡/坎/墙)原样保留。voxel 取 1~2cm，远低于雷达 0.4° 分辨率，
+    对 SLAM 不可见。仅用于【碰撞】网格。"""
+    t0 = time.time()
+    v = verts.astype(np.float64)
+    keys = np.floor(v / voxel).astype(np.int64)                 # 每个顶点落在哪个格
+    uniq, inv = np.unique(keys, axis=0, return_inverse=True)    # inv: 老顶点 -> 新顶点
+    inv = inv.ravel()
+    n_new = len(uniq)
+    new_v = np.zeros((n_new, 3), dtype=np.float64)
+    counts = np.zeros(n_new, dtype=np.int64)
+    np.add.at(new_v, inv, v)                                    # 每格顶点求和
+    np.add.at(counts, inv, 1)
+    new_v /= counts[:, None]                                    # -> 均值作代表
+    nf = inv[faces.reshape(-1, 3)]                              # 面重映射到新索引
+    good = ((nf[:, 0] != nf[:, 1]) & (nf[:, 1] != nf[:, 2])
+            & (nf[:, 0] != nf[:, 2]))                           # 丢弃塌陷(退化)三角形
+    new_faces = nf[good].reshape(-1).astype(np.int32)
+    print(f"[voxel] {voxel*100:.2f}cm 聚类去噪: 顶点 {len(verts)}->{n_new}, "
+          f"三角形 {len(faces)//3}->{len(new_faces)//3}, 用时 {time.time()-t0:.1f}s")
+    return new_v.astype(np.float32), new_faces
+
+
 def write_collision_layer(usdc_path, verts, faces, approximation, visible):
     """把网格几何写成一个独立 usdc 图层, 并加好碰撞 API。"""
     stage = Usd.Stage.CreateNew(usdc_path)
@@ -141,6 +166,9 @@ def main():
                     help="3DGS PLY，用于自动提取地理配准(offset/epsg/scale)并焊进新 usdz")
     ap.add_argument("--approximation", default="none",
                     choices=["none", "meshSimplification", "convexDecomposition", "convexHull"])
+    ap.add_argument("--voxel", type=float, default=0.0,
+                    help="对碰撞网格做体素聚类去噪的格子大小(米)，0=不做。建议 0.015(1.5cm)："
+                         "并掉绊轮子的亚厘米重建噪声，保留真实地形，雷达看不出差别。")
     ap.add_argument("--visible", action="store_true",
                     help="碰撞网格可见(灰), 用于首次目视检查对齐; 默认隐藏")
     args = ap.parse_args()
@@ -166,6 +194,8 @@ def main():
         # 2) 解析 OBJ + 写碰撞层
         print("[2/4] 解析 OBJ 并写碰撞网格 ...")
         verts, faces = load_obj(args.obj)
+        if args.voxel > 0:
+            verts, faces = voxel_cluster(verts, faces, args.voxel)
         coll_usdc = os.path.join(work, "collision.usdc")
         write_collision_layer(coll_usdc, verts, faces, args.approximation, args.visible)
 

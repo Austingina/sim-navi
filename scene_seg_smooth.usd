@@ -130,8 +130,8 @@ def Xform "World"
                 float drive:angular:physics:damping = 1000
                 float drive:angular:physics:maxForce = 10000000
                 float drive:angular:physics:stiffness = 100000
-                float drive:angular:physics:targetPosition = 0
-                float state:angular:physics:position = 0
+                float drive:angular:physics:targetPosition = -64.74423
+                float state:angular:physics:position = -64.74423
                 float state:angular:physics:velocity = 0
             }
 
@@ -142,8 +142,8 @@ def Xform "World"
                 float drive:angular:physics:damping = 1000
                 float drive:angular:physics:maxForce = 10000000
                 float drive:angular:physics:stiffness = 100000
-                float drive:angular:physics:targetPosition = 0
-                float state:angular:physics:position = 0
+                float drive:angular:physics:targetPosition = 144.95833
+                float state:angular:physics:position = 144.95833
                 float state:angular:physics:velocity = 0
             }
 
@@ -154,8 +154,8 @@ def Xform "World"
                 float drive:angular:physics:damping = 1000
                 float drive:angular:physics:maxForce = 10000000
                 float drive:angular:physics:stiffness = 100000
-                float drive:angular:physics:targetPosition = 0
-                float state:angular:physics:position = 0
+                float drive:angular:physics:targetPosition = 79.06818
+                float state:angular:physics:position = 79.06818
                 float state:angular:physics:velocity = 0
             }
 
@@ -460,7 +460,7 @@ def Xform "World"
                 float minRange = 0.1
                 float rotationRate = 20
                 float verticalFov = 59
-                float verticalResolution = 1.0
+                float verticalResolution = 1
                 token visibility = "inherited"
                 quatd xformOp:orient = (1, 0, 0, 0)
                 double3 xformOp:scale = (1, 1, 1)
@@ -608,7 +608,7 @@ def Xform "World"
     }
 
     def "zhichengAB_collision" (
-        prepend payload = @./assets/zhichengAB/zhichengAB-collision.usdz@
+        prepend payload = @./assets/zhichengAB/zhichengAB-collision-smooth.usdz@
     )
     {
     }
@@ -759,6 +759,7 @@ def OmniGraph "ActionGraph_control"
         int node:typeVersion = 2
         custom uint64 outputs:context
     }
+
     def OmniGraphNode "SubJoint"
     {
         custom uint64 inputs:context
@@ -877,7 +878,6 @@ def OmniGraph "ActionGraph_robot"
             }
         )
     }
-
 
     def OmniGraphNode "PubJoint"
     {
@@ -1347,7 +1347,6 @@ def OmniGraph "ActionGraph_imu"
         token node:type = "isaacsim.ros2.bridge.ROS2PublishClock"
         int node:typeVersion = 1
     }
-
 }
 
 def OmniGraph "ActionGraph_camera"
@@ -1421,8 +1420,8 @@ def OmniGraph "ActionGraph_camera"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_camera/RP.outputs:execOut>
-        custom uint inputs:frameSkipCount = 1
         custom string inputs:frameId = "zed_camera"
+        custom uint inputs:frameSkipCount = 1
         custom string inputs:nodeNamespace
         custom string inputs:qosProfile
         custom uint64 inputs:queueSize
@@ -1443,8 +1442,8 @@ def OmniGraph "ActionGraph_camera"
             }
         )
         prepend uint inputs:execIn.connect = </ActionGraph_camera/RP.outputs:execOut>
-        custom uint inputs:frameSkipCount = 1
         custom string inputs:frameId = "zed_camera"
+        custom uint inputs:frameSkipCount = 1
         custom string inputs:nodeNamespace
         custom string inputs:qosProfile
         custom uint64 inputs:queueSize
@@ -1456,3 +1455,4 @@ def OmniGraph "ActionGraph_camera"
         int node:typeVersion = 2
     }
 }
+

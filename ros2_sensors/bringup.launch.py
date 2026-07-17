@@ -51,6 +51,7 @@ def generate_launch_description():
     with_self_filter = LaunchConfiguration("with_self_filter")
     with_livox_custommsg = LaunchConfiguration("with_livox_custommsg")
     with_gps_map_tf = LaunchConfiguration("with_gps_map_tf")
+    with_odom_tf = LaunchConfiguration("with_odom_tf")
     georef_json = LaunchConfiguration("georef_json")
 
     default_georef = os.path.normpath(
@@ -77,6 +78,20 @@ def generate_launch_description():
         DeclareLaunchArgument("georef_json", default_value=default_georef,
                               description="地理配准文件；换场景传对应的(如 "
                                           "scene_tools/georef_square.json)"),
+        DeclareLaunchArgument("with_odom_tf", default_value="false",
+                              description="是否把 /odom_gt 真值里程计广播成 odom->base_link "
+                                          "TF(纯可视化/无 FAST-LIO 时用；rviz 摆机器人需要它)。"
+                                          "默认关：跑 FAST-LIO 时开会抢 base_link 父帧"),
+
+        # ---- odom->base_link TF（可选，默认关）----
+        # 把已有的 /odom_gt(真值 Odometry) 重播成 TF；不改任何 USD。
+        # 跑 FAST-LIO 时保持关闭，避免和它抢 base_link 父帧(TF_MULTIPLE_AUTHORITY)。
+        ExecuteProcess(
+            condition=IfCondition(with_odom_tf),
+            cmd=["python3", os.path.join(HERE, "odom_tf_publisher.py"),
+                 "--ros-args", "-p", "use_sim_time:=true"],
+            output="screen",
+        ),
 
         # ---- GPS 发布 ----
         ExecuteProcess(
@@ -99,18 +114,19 @@ def generate_launch_description():
         ),
 
         # ---- 雷达自身点裁剪（可选）：/livox/lidar_raw -> /livox/points ----
+        # output="log"：日志只进 ~/.ros/log，不刷屏(这俩节点高频、输出很吵)。
         ExecuteProcess(
             condition=IfCondition(with_self_filter),
             cmd=["python3", os.path.join(HERE, "lidar_self_filter.py"),
                  "--ros-args", "-p", "use_sim_time:=true"],
-            output="screen",
+            output="log",
         ),
 
-        # ---- PointCloud2 -> CustomMsg（可选）：/livox/points -> /livox/lidar ----
-        ExecuteProcess(
-            condition=IfCondition(with_livox_custommsg),
-            cmd=["python3", os.path.join(HERE, "pc2_to_livox.py"),
-                 "--ros-args", "-p", "use_sim_time:=true"],
-            output="screen",
-        ),
+        # # ---- PointCloud2 -> CustomMsg（可选）：/livox/points -> /livox/lidar ----
+        # ExecuteProcess(
+        #     condition=IfCondition(with_livox_custommsg),
+        #     cmd=["python3", os.path.join(HERE, "pc2_to_livox.py"),
+        #          "--ros-args", "-p", "use_sim_time:=true"],
+        #     output="log",
+        # ),
     ])

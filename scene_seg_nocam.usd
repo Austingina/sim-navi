@@ -52,7 +52,7 @@ def Xform "World"
             displayName = "Namespace"
             doc = "Namespace of the prim in Isaac Sim"
         )
-        double3 xformOp:translate = (0, 0, -1.4)
+        double3 xformOp:translate = (0, 0, -1.2)
         uniform token[] xformOpOrder = ["xformOp:translate"]
 
         over "joints"
@@ -460,7 +460,7 @@ def Xform "World"
                 float minRange = 0.1
                 float rotationRate = 20
                 float verticalFov = 59
-                float verticalResolution = 1.0
+                float verticalResolution = 1
                 token visibility = "inherited"
                 quatd xformOp:orient = (1, 0, 0, 0)
                 double3 xformOp:scale = (1, 1, 1)
@@ -608,7 +608,7 @@ def Xform "World"
     }
 
     def "zhichengAB_collision" (
-        prepend payload = @./assets/zhichengAB/zhichengAB-collision.usdz@
+        prepend payload = @./assets/zhichengAB/zhichengAB-collision-smooth.usdz@
     )
     {
     }
@@ -628,6 +628,7 @@ def "Render" (
         {
             def RenderProduct "omni_kit_widget_viewport_ViewportTexture_0" (
                 prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                active = false
                 hide_in_stage_window = true
                 no_delete = true
             )
@@ -670,6 +671,7 @@ def "Render" (
 
             def RenderProduct "Replicator" (
                 prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                active = false
                 hide_in_stage_window = true
                 no_delete = true
             )
@@ -690,6 +692,7 @@ def "Render" (
 
             def RenderProduct "Replicator_01" (
                 prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                active = false
                 hide_in_stage_window = true
                 no_delete = true
             )
@@ -1350,7 +1353,12 @@ def OmniGraph "ActionGraph_imu"
 
 }
 
-def OmniGraph "ActionGraph_camera"
+def OmniGraph "ActionGraph_camera" (
+    # 关相机版(scene_seg_nocam)：停用整个相机图。IsaacCreateRenderProduct 不再运行
+    # -> 运行时不会再动态创建 render product -> NuRec 相机不做每帧离屏渲染(RTF 大头)。
+    # /zed/rgb/image_raw、/zed/camera_info 随之消失；激光/IMU/TF/odom/clock 不受影响。
+    active = false
+)
 {
     token evaluationMode = "Automatic"
     token evaluator:type = "execution"
