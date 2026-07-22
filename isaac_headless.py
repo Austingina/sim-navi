@@ -376,11 +376,58 @@ print(f"[headless] 渲染抽帧：每 {RENDER_EVERY} 步渲1次 "
       f"雷达≈{PHYS_HZ / RENDER_EVERY:.0f}Hz；"
       f"/clock={PHYS_HZ / _clock_step:.0f}Hz、IMU={PHYS_HZ:.0f}Hz 不受影响)。")
 
-# 交互控制：无头没有 GUI 的 Stop/Play，这里给两条复位/退出入口。
-# 后台线程只置标志位，真正的 reset()/退出 由主循环执行(跨线程调物理不安全)。
-#   1) 终端输入 r + 回车 = 重新开始(机器人复位到 USD 初始状态)；q + 回车 = 退出。
-#   2) kill -USR1 <pid> = 远程触发复位(从别的终端/机器)。
-_cmd = {"reset": False, "quit": False}
+# 交互控制：无头没有 GUI 的 Stop/Play，这里给复位/扶正/退出入口。
+# 后台线程只置标志位，真正的动作由主循环执行(跨线程调物理不安全)。
+#   1) r + 回车 = 整场复位(机器人回 USD 起点)；u + 回车 = 原地扶正；q + 回车 = 退出。
+#   2) kill -USR1 <pid> = 远程整场复位；kill -USR2 <pid> = 远程原地扶正。
+_cmd = {"reset": False, "standup": False, "quit": False}
+
+# 原地扶正：保留 xy，姿态归单位四元数，z 抬 ISAAC_STANDUP_Z(默认 0.4m)，清零线/角速度。
+# 不整场 reset，/clock 与 SLAM 状态可继续；倒地时按 u 即可。
+STANDUP_Z = float(_os.environ.get("ISAAC_STANDUP_Z", "0.4"))
+ROBOT_ART_PRIM = _os.environ.get(
+    "ISAAC_ROBOT_ART", "/World/r1_pro_with_gripper/base_link")
+_standup_art = None
+
+
+def _standup_robot():
+    """倒地扶正：原地站起，不清仿真时间/不回起点。"""
+    global _standup_art  # noqa: PLW0603
+    import numpy as np  # noqa: PLC0415
+    try:
+        from isaacsim.core.prims import SingleArticulation  # noqa: PLC0415
+    except Exception as e:  # noqa: BLE001
+        print(f"[standup] 导入 SingleArticulation 失败: {e}")
+        return
+    try:
+        if _standup_art is None:
+            _standup_art = SingleArticulation(prim_path=ROBOT_ART_PRIM)
+            _standup_art.initialize()
+        pos, _ori = _standup_art.get_world_pose()
+        # 保留 xy；z 至少抬起 STANDUP_Z，避免埋进地面
+        new_pos = np.array(
+            [float(pos[0]), float(pos[1]), float(pos[2]) + STANDUP_Z],
+            dtype=np.float64)
+        # 单位四元数 (w,x,y,z)：roll/pitch/yaw 全 0，直立
+        new_ori = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        _standup_art.set_world_pose(position=new_pos, orientation=new_ori)
+        # 清速度，否则倒地惯性下一帧又把机器人甩翻
+        try:
+            _standup_art.set_linear_velocity(np.zeros(3, dtype=np.float64))
+            _standup_art.set_angular_velocity(np.zeros(3, dtype=np.float64))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            n = _standup_art.num_dof
+            if n and n > 0:
+                _standup_art.set_joint_velocities(np.zeros(n, dtype=np.float64))
+        except Exception:  # noqa: BLE001
+            pass
+        print(f"[standup] 扶正 @ xy=({new_pos[0]:.2f},{new_pos[1]:.2f}) "
+              f"z={new_pos[2]:.2f}(+{STANDUP_Z:g}) 姿态=identity")
+    except Exception as e:  # noqa: BLE001
+        print(f"[standup] 失败: {e}")
+        _standup_art = None  # 下次重建句柄
 
 
 def _stdin_loop():
@@ -389,6 +436,8 @@ def _stdin_loop():
             c = line.strip().lower()
             if c == "r":
                 _cmd["reset"] = True
+            elif c == "u":
+                _cmd["standup"] = True
             elif c == "q":
                 _cmd["quit"] = True
                 break
@@ -398,8 +447,9 @@ def _stdin_loop():
 
 threading.Thread(target=_stdin_loop, daemon=True).start()
 signal.signal(signal.SIGUSR1, lambda *_: _cmd.update(reset=True))
-print(f"[headless] 复位/退出：终端输 r+回车=重新开始, q+回车=退出; "
-      f"或远程 kill -USR1 {_os.getpid()} 复位。")
+signal.signal(signal.SIGUSR2, lambda *_: _cmd.update(standup=True))
+print(f"[headless] 控制：r=整场复位  u=原地扶正(+{STANDUP_Z:g}m)  q=退出; "
+      f"远程 kill -USR1 {_os.getpid()} 复位 / kill -USR2 {_os.getpid()} 扶正。")
 
 # 运行中每 5 秒打印一次实时率 RTF = 仿真时间推进 / 墙上时间。
 RTF_INTERVAL = 5.0
@@ -421,10 +471,14 @@ try:
             _cmd["reset"] = False
             print("[headless] 复位仿真到初始状态(机器人回到起点)…")
             sim_context.reset()          # 恢复 USD 初始位姿/关节，随后继续 play
+            _standup_art = None         # reset 后 articulation 句柄失效，下次扶正重建
             # 复位后重置节流与 RTF 基准，避免下一帧被当成“落后”乱追。
             _w_last = time.time()
             _s_last = sim_context.current_time
             _next_t = time.time()
+        if _cmd["standup"]:
+            _cmd["standup"] = False
+            _standup_robot()
 
         # 渲染抽帧：非渲染步只推物理(便宜)，渲染步才付相机渲染开销。
         # odom/tf/雷达/相机随渲染帧；/clock 与 IMU 由 OnPhysicsStep 驱动。
