@@ -25,6 +25,14 @@
                      确认对齐后去掉该参数(默认隐藏), 重新生成即可。
   --approximation    碰撞近似: none(默认, 原始三角面, 适合静态建筑) /
                      meshSimplification(面数太多卡顿时降负载) / convexDecomposition
+  --voxel            体素聚类去噪格子(米), 默认 0.04。低通去掉亚-voxel 的重建毛刺,
+                     保留大于 voxel 的真实地形/坡度。地面太颠加大, 墙变薄调小。
+  --smooth-iters     Taubin λ|μ 平滑轮数, 默认 5。在 voxel 之后再磨残余高频抖动,
+                     反收缩设计【不损失缓坡/大结构】。0=关闭。
+
+地面去颠簸推荐:
+  python3 add_collision_to_usdz.py --voxel 0.04 --smooth-iters 5 \
+      --out ../assets/zhichengAB/zhichengAB-collision-smooth.usdz
 """
 
 import argparse
@@ -120,6 +128,46 @@ def voxel_cluster(verts, faces, voxel):
     return new_v.astype(np.float32), new_faces
 
 
+def _build_undirected_edges(faces, n_verts):
+    """从三角面构建【去重】的无向边(双向)，用于均匀拉普拉斯的邻居聚合。
+    返回 (src, dst, inv_deg)：src->dst 每条无向边各出现一次(两个方向)，
+    inv_deg[i] = 1/deg(i)(孤立点记 1，避免除零)。拓扑固定，只需构建一次。"""
+    f = faces.reshape(-1, 3)
+    e = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]], axis=0)
+    e = np.sort(e, axis=1)                       # 无向：小索引在前
+    e = np.unique(e, axis=0)                     # 去掉相邻三角形共享的重复边
+    src = np.concatenate([e[:, 0], e[:, 1]])     # 对称成双向
+    dst = np.concatenate([e[:, 1], e[:, 0]])
+    deg = np.bincount(src, minlength=n_verts).astype(np.float64)
+    deg[deg == 0] = 1.0
+    return src, dst, (1.0 / deg)[:, None]
+
+
+def taubin_smooth(verts, faces, iters, lam=0.5, mu=-0.53):
+    """Taubin λ|μ 平滑：交替一步正系数(λ>0)收缩 + 一步负系数(μ<0)反收缩，
+    抵消普通拉普拉斯的整体缩水，因此【只磨掉高频抖动，缓坡/大结构原样保留】。
+    纯 numpy 实现(均匀拉普拉斯)，不引入 scipy/open3d。仅用于【碰撞】网格。
+    经验值 λ=0.5, μ=-0.53(|μ|>λ) 是 Taubin 论文推荐的稳定通带。"""
+    if iters <= 0 or len(faces) == 0:
+        return verts
+    t0 = time.time()
+    v = verts.astype(np.float64)
+    src, dst, inv_deg = _build_undirected_edges(faces, len(v))
+
+    def umbrella(p):
+        # L(p)_i = mean_{j∈N(i)} p_j - p_i  (均匀权重拉普拉斯)
+        acc = np.zeros_like(p)
+        np.add.at(acc, src, p[dst])
+        return acc * inv_deg - p
+
+    for _ in range(iters):
+        v += lam * umbrella(v)                   # 收缩一步
+        v += mu * umbrella(v)                    # 反收缩一步(负系数)
+    print(f"[taubin] 平滑 {iters} 轮 (λ={lam:g}, μ={mu:g}): 顶点 {len(v)} "
+          f"(保坡度，去高频)，用时 {time.time()-t0:.1f}s")
+    return v.astype(np.float32)
+
+
 def write_collision_layer(usdc_path, verts, faces, approximation, visible):
     """把网格几何写成一个独立 usdc 图层, 并加好碰撞 API。"""
     stage = Usd.Stage.CreateNew(usdc_path)
@@ -166,9 +214,17 @@ def main():
                     help="3DGS PLY，用于自动提取地理配准(offset/epsg/scale)并焊进新 usdz")
     ap.add_argument("--approximation", default="none",
                     choices=["none", "meshSimplification", "convexDecomposition", "convexHull"])
-    ap.add_argument("--voxel", type=float, default=0.0,
-                    help="对碰撞网格做体素聚类去噪的格子大小(米)，0=不做。建议 0.015(1.5cm)："
-                         "并掉绊轮子的亚厘米重建噪声，保留真实地形，雷达看不出差别。")
+    ap.add_argument("--voxel", type=float, default=0.04,
+                    help="对碰撞网格做体素聚类去噪的格子大小(米)，0=不做。默认 0.04(4cm)："
+                         "并掉绊轮子的亚厘米重建噪声，保留真实地形/坡度，远小于雷达 0.4° "
+                         "分辨率，SLAM 看不出差别。地面太颠可加大，墙/门框变薄则调小。")
+    ap.add_argument("--smooth-iters", type=int, default=5,
+                    help="Taubin λ|μ 平滑迭代轮数，0=不平滑。默认 5：在 voxel 去噪之后再磨掉"
+                         "残余高频抖动，且【保留缓坡/大结构】(反收缩不缩水)。3~8 之间调。")
+    ap.add_argument("--smooth-lambda", type=float, default=0.5,
+                    help="Taubin 正向(收缩)系数 λ，默认 0.5。")
+    ap.add_argument("--smooth-mu", type=float, default=-0.53,
+                    help="Taubin 反向(反收缩)系数 μ，默认 -0.53(需 |μ|>λ 才不缩水)。")
     ap.add_argument("--visible", action="store_true",
                     help="碰撞网格可见(灰), 用于首次目视检查对齐; 默认隐藏")
     args = ap.parse_args()
@@ -196,6 +252,9 @@ def main():
         verts, faces = load_obj(args.obj)
         if args.voxel > 0:
             verts, faces = voxel_cluster(verts, faces, args.voxel)
+        if args.smooth_iters > 0:
+            verts = taubin_smooth(verts, faces, args.smooth_iters,
+                                  args.smooth_lambda, args.smooth_mu)
         coll_usdc = os.path.join(work, "collision.usdc")
         write_collision_layer(coll_usdc, verts, faces, args.approximation, args.visible)
 
