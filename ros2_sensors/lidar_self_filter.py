@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """
+【已弃用 / DEPRECATED】本节点的裁机身逻辑已并入 pc2_to_livox.py（雷达单节点流水线：
+/livox/lidar_raw -> 裁机身+降采样 -> /livox/points + /livox/lidar），bringup.launch.py
+不再启动本文件。保留它仅供“只想要 /livox/points、不需要 CustomMsg”的独立场景使用。
+
 Mid360 自身点裁剪 —— 把落在“机器人机身足迹”内的点去掉后重新发布。
 
 背景：Isaac 的 PhysX Generic Lidar 用 PxScene::raycast 打【所有】碰撞体，没有“忽略某
@@ -113,11 +117,17 @@ class LidarSelfFilter(Node):
 
             x = f32(xo)
             y = f32(yo)
-            z = f32(zo) + self.sz          # -> base_link 系 z
+            z_raw = f32(zo)                 # 只解一次；下面复用(原来 finite 检查又解了一遍)
+            z = z_raw + self.sz            # -> base_link 系 z
 
-            inside = ((np.abs(x) <= self.hx) & (np.abs(y) <= self.hy) &
+            # np.abs 用 out= 原地复用缓冲(少两个临时数组)。abs 不改变有限性(|nan|=nan、
+            # |inf|=inf)，所以后面仍可对 abs 后的 x/y 判 finite。
+            ax = np.abs(x, out=x)
+            ay = np.abs(y, out=y)
+            inside = ((ax <= self.hx) & (ay <= self.hy) &
                       (z >= self.zmin) & (z <= self.zmax))
-            keep = (~inside) & np.isfinite(x) & np.isfinite(y) & np.isfinite(f32(zo))
+            keep = ((~inside) & np.isfinite(ax) & np.isfinite(ay)
+                    & np.isfinite(z_raw))
 
             kept = raw[keep]
             self.last_out = int(kept.shape[0])

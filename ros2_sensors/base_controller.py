@@ -74,7 +74,9 @@ class SwerveController(Node):
         self.declare_parameter("joint_cmd_topic", "/joint_command")
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("posture_topic", "/posture_command")
-        self.declare_parameter("rate_hz", 50.0)
+        # 注意：带 use_sim_time 时，timer 由 /clock 驱动，有效频率被 /clock(ISAAC_CLOCK_HZ,
+        # 默认 20Hz)压着；设得比它高只会让 rclpy 反复追赶时钟、空烧 CPU。取 ≈ /clock 即可。
+        self.declare_parameter("rate_hz", 30.0)
         # 限速 / 限加速 / 限转向速率：头重脚轻的底盘带着动量撞上地面颠簸就翻，
         # 这里给车体速度做上限 + 斜坡(限加速度) + 转向角限速，让轮子"骑过"而不是"撞进"小起伏。
         # 想放开(等价关闭)就把这些设很大。
@@ -95,12 +97,6 @@ class SwerveController(Node):
             JointState, self.get_parameter("joint_cmd_topic").value, 10)
         self.sub = self.create_subscription(
             Twist, self.get_parameter("cmd_vel_topic").value, self.on_cmd, 10)
-        self.js_sub = self.create_subscription(
-            JointState,
-            self.get_parameter("joint_states_topic").value,
-            self.on_joint_state,
-            10,
-        )
         # posture_ui.py 发来的手动姿态(躯干/手臂)，合并进 /joint_command 的保持位。
         # 这样"弯腰降重心"和底盘开车共用一个发布源，不会两个节点抢 /joint_command。
         self.posture_sub = self.create_subscription(
@@ -116,6 +112,23 @@ class SwerveController(Node):
         self.hold_pos = {n: 0.0 for n in HOLD_JOINT_NAMES}
         self.hold_locked = False
         self._load_default_posture()   # 有默认姿态文件就直接用它当低重心保持位
+
+        # /joint_states 只用来锁一次初始保持位：若已从文件加载(hold_locked)就完全不订阅；
+        # 否则订阅、在首帧锁定后立即销毁，避免此后每帧白白反序列化整机关节状态。
+        self.js_sub = None
+        if not self.hold_locked:
+            self.js_sub = self.create_subscription(
+                JointState,
+                self.get_parameter("joint_states_topic").value,
+                self.on_joint_state,
+                10,
+            )
+
+        # 复用一条 JointState：name 固定，只设一次(rclpy 给序列字段赋值会逐元素校验，
+        # 每 tick 重建 name 实测占 Python 侧一半开销)。tick 里只更新 position/velocity。
+        self._js = JointState()
+        self._js.name = STEER_NAMES + WHEEL_NAMES + list(HOLD_JOINT_NAMES)
+
         hz = float(self.get_parameter("rate_hz").value)
         self.dt = 1.0 / hz
         self.timer = self.create_timer(self.dt, self.tick)
@@ -140,6 +153,10 @@ class SwerveController(Node):
                 self.hold_pos[name] = msg.position[i]
         self.hold_locked = True
         self.get_logger().info("已锁定躯干/手臂保持位（来自 /joint_states 首帧）")
+        # 锁定完成，此后不再需要 /joint_states：销毁订阅，省掉每帧整机关节反序列化。
+        if self.js_sub is not None:
+            self.destroy_subscription(self.js_sub)
+            self.js_sub = None
 
     def _load_default_posture(self):
         """启动时加载 default_posture.json 到保持位并锁定（不再被 /joint_states 首帧直立姿态覆盖），
@@ -206,9 +223,8 @@ class SwerveController(Node):
             wheels.append(omega)
 
         hold = [self.hold_pos[n] for n in HOLD_JOINT_NAMES]
-        js = JointState()
+        js = self._js                       # 复用同一条消息，name 已在 __init__ 设好
         js.header.stamp = self.get_clock().now().to_msg()
-        js.name = STEER_NAMES + WHEEL_NAMES + HOLD_JOINT_NAMES
         js.position = steers + [0.0, 0.0, 0.0] + hold
         js.velocity = [0.0, 0.0, 0.0] + wheels + [0.0] * len(HOLD_JOINT_NAMES)
         self.pub.publish(js)

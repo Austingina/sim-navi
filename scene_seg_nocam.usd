@@ -52,7 +52,7 @@ def Xform "World"
             displayName = "Namespace"
             doc = "Namespace of the prim in Isaac Sim"
         )
-        double3 xformOp:translate = (0, 0, -1.2)
+        double3 xformOp:translate = (0, 0, -1.4)
         uniform token[] xformOpOrder = ["xformOp:translate"]
 
         over "joints"
@@ -130,8 +130,8 @@ def Xform "World"
                 float drive:angular:physics:damping = 1000
                 float drive:angular:physics:maxForce = 10000000
                 float drive:angular:physics:stiffness = 100000
-                float drive:angular:physics:targetPosition = 0
-                float state:angular:physics:position = 0
+                float drive:angular:physics:targetPosition = -64.74423
+                float state:angular:physics:position = -64.74423
                 float state:angular:physics:velocity = 0
             }
 
@@ -142,8 +142,8 @@ def Xform "World"
                 float drive:angular:physics:damping = 1000
                 float drive:angular:physics:maxForce = 10000000
                 float drive:angular:physics:stiffness = 100000
-                float drive:angular:physics:targetPosition = 0
-                float state:angular:physics:position = 0
+                float drive:angular:physics:targetPosition = 144.95833
+                float state:angular:physics:position = 144.95833
                 float state:angular:physics:velocity = 0
             }
 
@@ -154,8 +154,8 @@ def Xform "World"
                 float drive:angular:physics:damping = 1000
                 float drive:angular:physics:maxForce = 10000000
                 float drive:angular:physics:stiffness = 100000
-                float drive:angular:physics:targetPosition = 0
-                float state:angular:physics:position = 0
+                float drive:angular:physics:targetPosition = 79.06818
+                float state:angular:physics:position = 79.06818
                 float state:angular:physics:velocity = 0
             }
 
@@ -608,7 +608,7 @@ def Xform "World"
     }
 
     def "zhichengAB_collision" (
-        prepend payload = @./assets/zhichengAB/zhichengAB-collision-smooth.usdz@
+        prepend payload = @./assets/zhichengAB/zhichengAB-collision-smoother.usdz@
     )
     {
     }

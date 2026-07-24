@@ -6,13 +6,16 @@ Script Editor 里跑 setup_sensors.py / setup_control.py）。
 本 launch 只启动**纯 ROS 节点**：
   - gps_publisher.py     (odom -> /gps/fix，georef 精确换算；默认不发 map->odom TF)
   - base_controller.py   (/cmd_vel -> /joint_command，swerve 运动学，可关)
-  - lidar_self_filter.py (裁掉机身自身点：/livox/lidar_raw -> /livox/points，可关)
-  - pc2_to_livox.py      (/livox/points(PointCloud2) -> /livox/lidar(CustomMsg)，可关)
+  - pc2_to_livox.py      (雷达单节点流水线：裁机身+降采样，一个节点搞定，可关)
 全部带 use_sim_time:=true，与 Isaac 的 /clock 对齐，避免 TF 时间外推报错。
 
 雷达 topic 与真实 livox_ros_driver2 对齐（frame_id=livox_frame）：
-  /livox/lidar_raw (PointCloud2,Isaac原始) -> /livox/points (PointCloud2,已裁机身)
-  -> /livox/lidar (livox_ros_driver2/CustomMsg，给 FAST-LIO 等 SLAM)
+  /livox/lidar_raw (PointCloud2,Isaac原始)
+    --pc2_to_livox.py(裁机身+降采样,合并了原 lidar_self_filter)-->
+  /livox/points (PointCloud2,已裁机身,全分辨率,给 RViz) +
+  /livox/lidar  (livox_ros_driver2/CustomMsg,已降采样,给 FAST-LIO 等 SLAM)
+说明：原来的 lidar_self_filter.py 已并入 pc2_to_livox.py（省掉中间一跳 DDS +
+一次反序列化，降低延迟/抖动），不再单独启动。
 注意：pc2_to_livox.py 需要 import livox_ros_driver2.msg，运行前先
   source install/setup.bash（编译过 livox_ros_driver2 的工作区）。
 
@@ -48,8 +51,8 @@ def generate_launch_description():
     spawn_x = LaunchConfiguration("spawn_x")
     spawn_y = LaunchConfiguration("spawn_y")
     with_controller = LaunchConfiguration("with_controller")
-    with_self_filter = LaunchConfiguration("with_self_filter")
-    with_livox_custommsg = LaunchConfiguration("with_livox_custommsg")
+    with_livox_pipeline = LaunchConfiguration("with_livox_pipeline")
+    with_points = LaunchConfiguration("with_points")
     with_gps_map_tf = LaunchConfiguration("with_gps_map_tf")
     with_odom_tf = LaunchConfiguration("with_odom_tf")
     georef_json = LaunchConfiguration("georef_json")
@@ -64,13 +67,14 @@ def generate_launch_description():
                               description="机器人出生世界坐标 Y"),
         DeclareLaunchArgument("with_controller", default_value="true",
                               description="是否启动 swerve 底盘控制器"),
-        DeclareLaunchArgument("with_self_filter", default_value="true",
-                              description="是否裁掉雷达扫到的机身自身点"
-                                          "(/livox/lidar_raw -> /livox/points)"),
-        DeclareLaunchArgument("with_livox_custommsg", default_value="true",
-                              description="是否把 /livox/points 转成 "
-                                          "/livox/lidar(livox_ros_driver2/CustomMsg)；"
+        DeclareLaunchArgument("with_livox_pipeline", default_value="true",
+                              description="是否启动雷达流水线节点 pc2_to_livox.py"
+                                          "(裁机身+降采样：/livox/lidar_raw -> "
+                                          "/livox/points + /livox/lidar)；"
                                           "需先 source 编译过 livox_ros_driver2 的 install"),
+        DeclareLaunchArgument("with_points", default_value="true",
+                              description="流水线是否额外发布全分辨率 /livox/points"
+                                          "(给 RViz 看)；纯 SLAM 无头跑可设 false 省开销"),
         DeclareLaunchArgument("with_gps_map_tf", default_value="false",
                               description="GPS 是否发 map->odom 静态 TF；默认关"
                                           "(跑 FAST-LIO 等自带 odom/map 帧时避免抢父帧)。"
@@ -113,20 +117,14 @@ def generate_launch_description():
             output="screen",
         ),
 
-        # ---- 雷达自身点裁剪（可选）：/livox/lidar_raw -> /livox/points ----
-        # output="log"：日志只进 ~/.ros/log，不刷屏(这俩节点高频、输出很吵)。
+        # ---- 雷达流水线（可选）：/livox/lidar_raw -> 裁机身+降采样 -> points + lidar ----
+        # 合并了原 lidar_self_filter + pc2_to_livox 两个节点，省一跳 DDS。
+        # output="log"：日志只进 ~/.ros/log，不刷屏(高频节点，输出很吵)。
         ExecuteProcess(
-            condition=IfCondition(with_self_filter),
-            cmd=["python3", os.path.join(HERE, "lidar_self_filter.py"),
-                 "--ros-args", "-p", "use_sim_time:=true"],
+            condition=IfCondition(with_livox_pipeline),
+            cmd=["python3", os.path.join(HERE, "pc2_to_livox.py"),
+                 "--ros-args", "-p", "use_sim_time:=true",
+                 "-p", ["publish_points:=", with_points]],
             output="log",
         ),
-
-        # # ---- PointCloud2 -> CustomMsg（可选）：/livox/points -> /livox/lidar ----
-        # ExecuteProcess(
-        #     condition=IfCondition(with_livox_custommsg),
-        #     cmd=["python3", os.path.join(HERE, "pc2_to_livox.py"),
-        #          "--ros-args", "-p", "use_sim_time:=true"],
-        #     output="log",
-        # ),
     ])

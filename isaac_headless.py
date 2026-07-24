@@ -130,8 +130,8 @@ if _lidar_full_scan:
 # 雷达角分辨率(度)。默认 0=不改(用 USD 里的 0.4°/1.0° ≈ 53k 点)。点数 = (360/H)×(59/V)。
 # 点太多会拖累 WLAN 传输 + 下游 pc2_to_livox 的逐点转换(它是 O(点数) 的 Python 循环) ->
 # /livox/lidar 掉频。建议 ISAAC_LIDAR_HRES=0.8 ISAAC_LIDAR_VRES=1.5 -> ~18k 点(接近真机 Mid360)。
-_lidar_hres = float(_os.environ.get("ISAAC_LIDAR_HRES", "0"))
-_lidar_vres = float(_os.environ.get("ISAAC_LIDAR_VRES", "0"))
+_lidar_hres = float(_os.environ.get("ISAAC_LIDAR_HRES", "0.8"))
+_lidar_vres = float(_os.environ.get("ISAAC_LIDAR_VRES", "1.5"))
 if _lidar_hres > 0:
     _lidar_prim.GetAttribute("horizontalResolution").Set(_lidar_hres)
 if _lidar_vres > 0:

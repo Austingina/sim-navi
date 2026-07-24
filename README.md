@@ -21,9 +21,9 @@
 │   ├── base_controller.py        # /cmd_vel → /joint_command（swerve 运动学）
 │   ├── setup_sensors.py          # Isaac Script Editor：建传感器 + ROS 发布图（幂等建图脚本）
 │   ├── setup_control.py          # Isaac Script Editor：建 Articulation 控制图
-│   ├── lidar_self_filter.py      # /livox/lidar_raw → /livox/points（裁掉机身自身点）
-│   ├── pc2_to_livox.py           # /livox/points → /livox/lidar（livox CustomMsg，给 FAST-LIO）
-│   ├── bringup.launch.py         # 起纯节点（GPS + 控制器 + 雷达自裁剪 + CustomMsg 转换）
+│   ├── lidar_self_filter.py      # 【已弃用】裁机身逻辑已并入 pc2_to_livox.py
+│   ├── pc2_to_livox.py           # 雷达流水线：/livox/lidar_raw → 裁机身+降采样 → /livox/points + /livox/lidar
+│   ├── bringup.launch.py         # 起纯节点（GPS + 控制器 + 雷达流水线）
 │   └── r1_pro.rviz
 ├── scene_tools/             # 场景碰撞地图 + 地理配准的离线生成工具
 │   ├── add_collision_to_usdz.py  # 给高斯 usdz 加隐藏碰撞网格 + 焊入 georef
