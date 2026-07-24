@@ -99,7 +99,12 @@ fi
 
 # scene_seg.usd：NuRec 相机场景默认配置(可被环境变量覆盖)。
 #   VIEWPORT=1       开渲染(相机 render product 需要；=0 则只出 IMU/雷达等非渲染话题)
-#   HZ=0             不主动限速；isaac_headless.py 内封顶物理步频(ISAAC_PHYSICS_HZ，默认200Hz)
+#   HZ=0             自由跑，RTF≈1。NuRec 渲染一步几乎吃满整周期实时预算(满速RTF才刚到1，零
+#                    余量)，此时便宜物理步瞬间冲完去"补贴"渲染步 -> RTF≈1，但 clock 墙钟会
+#                    成对突发(min≈0)。注意:sim-time 时间戳仍完全均匀,FAST-LIO 不受影响。
+#                    ★想 clock 墙钟也均匀，必须先给渲染腾出余量(降 RENDER_HZ/分辨率/开 CROP，
+#                     让满速 RTF>1.3)，再把 ISAAC_HZ 设成 200 节流 -> 那时才能 RTF=1 且 clock 稳。
+#                    直接 HZ=200 而渲染没余量 -> 便宜步被强行睡满,余量被浪费 -> RTF 掉到 ~0.5。
 #   RENDER_HZ=10     standalone 每帧有两个 playback tick：状态图≈20Hz、雷达去重后≈10Hz
 #   CLOCK_HZ=20      /clock 由物理步 Gate 均匀发布；IMU=200Hz；二者不受渲染抽帧影响
 #   MAX_DEPEN_VEL=2  刚体解穿透速度上限(m/s)：抑制重建地面小凸起把机器人弹飞/掀翻；

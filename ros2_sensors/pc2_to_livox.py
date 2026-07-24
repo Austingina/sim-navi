@@ -170,22 +170,21 @@ class Pc2ToLivox(Node):
         else:
             refl = np.zeros(npts, dtype=np.uint8)
 
-        xf = xyz[:, 0].astype(np.float32)
-        yf = xyz[:, 1].astype(np.float32)
-        zf = xyz[:, 2].astype(np.float32)
+        # 向量化构建 points：先把各列 numpy 数组一次性 .tolist() 转成原生 Python 序列
+        # (避免逐点 numpy 标量索引 + float()/int() 装箱，这才是原 for 循环的大头)，
+        # 再用列表推导 + zip 一次建完，每点只调一次 CustomPoint(**kwargs)。
+        # tag/line 默认即 0，不显式赋值(省两次 setattr)；嵌套消息的 C 序列化无法避开，
+        # 但 Python 侧开销已压到最低。
+        offs_l = offs.tolist()
+        refl_l = refl.tolist()
+        xf_l = xyz[:, 0].astype(np.float32).tolist()
+        yf_l = xyz[:, 1].astype(np.float32).tolist()
+        zf_l = xyz[:, 2].astype(np.float32).tolist()
 
-        points = []
-        for i in range(npts):
-            p = CustomPoint()
-            p.offset_time = int(offs[i])
-            p.x = float(xf[i])
-            p.y = float(yf[i])
-            p.z = float(zf[i])
-            p.reflectivity = int(refl[i])
-            p.tag = 0
-            p.line = 0
-            points.append(p)
-        msg.points = points
+        msg.points = [
+            CustomPoint(offset_time=o, x=x, y=y, z=z, reflectivity=r)
+            for o, x, y, z, r in zip(offs_l, xf_l, yf_l, zf_l, refl_l)
+        ]
         return msg
 
 
