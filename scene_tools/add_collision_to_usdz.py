@@ -29,10 +29,18 @@
                      保留大于 voxel 的真实地形/坡度。地面太颠加大, 墙变薄调小。
   --smooth-iters     Taubin λ|μ 平滑轮数, 默认 5。在 voxel 之后再磨残余高频抖动,
                      反收缩设计【不损失缓坡/大结构】。0=关闭。
+  --smooth-floor-only  只平滑地面(按法向识别), 墙/门/障碍物完全不动;
+                     可放心把 --smooth-iters 开到 30~60 也不伤竖直结构。
+  --floor-cos        地面判定阈值 |n·ẑ|, 默认 0.7(≈允许 45° 缓坡); 坡更陡调小。
 
-地面去颠簸推荐:
+地面去颠簸推荐(全局, 温和):
   python3 add_collision_to_usdz.py --voxel 0.04 --smooth-iters 5 \
       --out ../assets/zhichengAB/zhichengAB-collision-smooth.usdz
+
+地面猛猛开大(只平地面, 墙门不动, 保坡度):
+  python3 add_collision_to_usdz.py --voxel 0.035 --smooth-iters 40 \
+      --smooth-floor-only --floor-cos 0.7 \
+      --out ../assets/zhichengAB/zhichengAB-collision-smoother.usdz
 """
 
 import argparse
@@ -168,6 +176,68 @@ def taubin_smooth(verts, faces, iters, lam=0.5, mu=-0.53):
     return v.astype(np.float32)
 
 
+def smooth_floor_only(verts, faces, iters, lam=0.5, mu=-0.53, floor_cos=0.7):
+    """只对【地面】做保坡度 Taubin 平滑，墙/门/障碍物一动不动。可以对地面下猛药
+    (大 iters)而完全不牵连雷达要扫的竖直结构。纯 numpy，不加依赖。
+
+    区分地面 vs 墙：按三角面法向。地面/坡面朝上 -> |n·ẑ| 大；墙/门框竖直 -> |n·ẑ|≈0。
+    floor_cos=0.7 即接受与水平夹角 ≤45° 的面为地面，足以覆盖室内缓坡，同时把墙(≈90°)
+    远远排除。坡越陡就把 floor_cos 调小(如 0.6=允许 53°)。
+
+    保护墙根：只移动【内部地面顶点】(其相邻面【全是】地面)；地面与墙交界处的顶点被
+    冻结当锚点 —— 这样地面内部磨得再狠，墙根那条缝也纹丝不动。"""
+    if iters <= 0 or len(faces) == 0:
+        return verts
+    t0 = time.time()
+    v = verts.astype(np.float64)
+    f = faces.reshape(-1, 3)
+
+    # 每个三角面的单位法向的 z 分量绝对值(碰撞网格法向朝向可能不一致，取 abs)
+    n = np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])
+    ln = np.linalg.norm(n, axis=1)
+    ln[ln == 0] = 1.0
+    nz = np.abs(n[:, 2] / ln)
+    floor_face = nz >= floor_cos                 # 朝上 -> 地面候选
+
+    ff = f[floor_face]                           # 地面面
+    nf = f[~floor_face]                          # 非地面面(墙/门/障碍)
+    is_floor_v = np.zeros(len(v), dtype=bool)
+    touches_other = np.zeros(len(v), dtype=bool)
+    if len(ff):
+        is_floor_v[ff.reshape(-1)] = True
+    if len(nf):
+        touches_other[nf.reshape(-1)] = True
+    # 内部地面顶点 = 属于地面面 且 不挨着任何非地面面(交界顶点冻结当锚点)
+    movable = is_floor_v & ~touches_other
+
+    if not movable.any() or len(ff) == 0:
+        print(f"[floor] 未识别到可平滑的地面(floor_cos={floor_cos:g} 太严?)，跳过。")
+        return verts
+
+    # 邻接只用【地面面】的边构建 -> 平滑时不会把墙的顶点拉进平均
+    e = np.concatenate([ff[:, [0, 1]], ff[:, [1, 2]], ff[:, [2, 0]]], axis=0)
+    e = np.unique(np.sort(e, axis=1), axis=0)
+    src = np.concatenate([e[:, 0], e[:, 1]])
+    dst = np.concatenate([e[:, 1], e[:, 0]])
+    deg = np.bincount(src, minlength=len(v)).astype(np.float64)
+    deg[deg == 0] = 1.0
+    inv_deg = (1.0 / deg)[:, None]
+    mov = movable[:, None]                        # 只更新内部地面顶点
+
+    def umbrella(p):
+        acc = np.zeros_like(p)
+        np.add.at(acc, src, p[dst])
+        return acc * inv_deg - p
+
+    for _ in range(iters):
+        v += mov * (lam * umbrella(v))           # 收缩(仅地面内部)
+        v += mov * (mu * umbrella(v))            # 反收缩
+    print(f"[floor] 地面专属平滑 {iters} 轮 (floor_cos={floor_cos:g}, λ={lam:g}, μ={mu:g}): "
+          f"地面面 {int(floor_face.sum())}/{len(f)}，移动顶点 {int(movable.sum())}/{len(v)}"
+          f"(墙/门/交界冻结)，用时 {time.time()-t0:.1f}s")
+    return v.astype(np.float32)
+
+
 def write_collision_layer(usdc_path, verts, faces, approximation, visible):
     """把网格几何写成一个独立 usdc 图层, 并加好碰撞 API。"""
     stage = Usd.Stage.CreateNew(usdc_path)
@@ -225,6 +295,12 @@ def main():
                     help="Taubin 正向(收缩)系数 λ，默认 0.5。")
     ap.add_argument("--smooth-mu", type=float, default=-0.53,
                     help="Taubin 反向(反收缩)系数 μ，默认 -0.53(需 |μ|>λ 才不缩水)。")
+    ap.add_argument("--smooth-floor-only", action="store_true",
+                    help="只对地面(按法向识别)做 Taubin 平滑，墙/门/障碍物完全不动。"
+                         "可以放心把 --smooth-iters 开很大(如 30~60)也不伤竖直结构。")
+    ap.add_argument("--floor-cos", type=float, default=0.7,
+                    help="地面判定阈值 |n·ẑ|：≥ 该值的三角面算地面。0.7≈允许 45° 缓坡；"
+                         "坡更陡就调小(0.6≈53°)。仅配合 --smooth-floor-only 生效。")
     ap.add_argument("--visible", action="store_true",
                     help="碰撞网格可见(灰), 用于首次目视检查对齐; 默认隐藏")
     args = ap.parse_args()
@@ -253,8 +329,13 @@ def main():
         if args.voxel > 0:
             verts, faces = voxel_cluster(verts, faces, args.voxel)
         if args.smooth_iters > 0:
-            verts = taubin_smooth(verts, faces, args.smooth_iters,
-                                  args.smooth_lambda, args.smooth_mu)
+            if args.smooth_floor_only:
+                verts = smooth_floor_only(verts, faces, args.smooth_iters,
+                                          args.smooth_lambda, args.smooth_mu,
+                                          args.floor_cos)
+            else:
+                verts = taubin_smooth(verts, faces, args.smooth_iters,
+                                      args.smooth_lambda, args.smooth_mu)
         coll_usdc = os.path.join(work, "collision.usdc")
         write_collision_layer(coll_usdc, verts, faces, args.approximation, args.visible)
 
