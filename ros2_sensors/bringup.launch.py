@@ -25,7 +25,7 @@ TF 全部由 Isaac 侧 setup_sensors.py 统一发布（职责单一，不分散�
 static_transform_publisher**。
 
 用法（在仓库根目录下）：
-  source /opt/ros/humble/setup.bash
+  source /opt/ros/jazzy/setup.bash
   ros2 launch ros2_sensors/bringup.launch.py
 
 地理配准(UTM zone/offset/scale)由 georef.json 自动加载（scene_tools/make_georef.py
@@ -40,7 +40,11 @@ rviz_satellite 卫星图定向时再打开：
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 
@@ -59,8 +63,23 @@ def generate_launch_description():
 
     default_georef = os.path.normpath(
         os.path.join(HERE, "..", "scene_tools", "georef.json"))
+    default_cyclonedds_uri = "file://" + os.path.normpath(
+        os.path.join(HERE, "..", "cyclonedds_lan.xml"))
 
     return LaunchDescription([
+        # 与 Isaac 使用同一 CycloneDDS 静态 peer，使本 launch 的所有
+        # 子进程也能跨子网发现 10.229.66.59。显式 export 的值优先。
+        SetEnvironmentVariable(
+            "RMW_IMPLEMENTATION",
+            os.environ.get("RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp")),
+        SetEnvironmentVariable(
+            "ROS_DOMAIN_ID", os.environ.get("ROS_DOMAIN_ID", "7")),
+        SetEnvironmentVariable(
+            "ROS_LOCALHOST_ONLY", os.environ.get("ROS_LOCALHOST_ONLY", "0")),
+        SetEnvironmentVariable(
+            "CYCLONEDDS_URI",
+            os.environ.get("CYCLONEDDS_URI", default_cyclonedds_uri)),
+
         DeclareLaunchArgument("spawn_x", default_value="0.0",
                               description="机器人出生世界坐标 X (决定 GPS 原点)"),
         DeclareLaunchArgument("spawn_y", default_value="0.0",

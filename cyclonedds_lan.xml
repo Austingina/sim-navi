@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="eno1" multicast="false" />
+      </Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+    </General>
+    <Discovery>
+      <Peers>
+        <!-- 禁用组播后仍需显式发现同一主机上的其他 ROS 2 进程。 -->
+        <Peer Address="127.0.0.1" />
+        <Peer Address="10.229.66.59" />
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

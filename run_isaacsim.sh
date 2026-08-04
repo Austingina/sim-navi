@@ -43,9 +43,16 @@ unset PYTHONPATH
 # 2.1) 让 isaacsim.ros2.bridge 找到自带的 RMW(DDS) 库。
 #      上面清空了 LD_LIBRARY_PATH，bridge 就 dlopen 不到 RMW(DDS) 实现库，
 #      会启动失败 -> /clock /odom /tf 等 ROS2 OmniGraph 节点全部缺失。
-#      这里只加回 bridge 扩展自带的 humble 库目录（干净，不引入系统 ROS，避免 TLS 崩溃）。
-#      注意: 不要在这个脚本里 source /opt/ros/humble/setup.bash，那会重新污染库路径。
-export ROS_DISTRO=humble
+#      这里只加回 bridge 扩展自带的当前 ROS 发行版库目录，
+#      不引入系统 ROS，避免 TLS 崩溃。未 source ROS 时默认使用 Jazzy。
+#      注意: 不要在这个脚本里 source /opt/ros/*/setup.bash，那会重新污染库路径。
+export ROS_DISTRO="${ROS_DISTRO:-jazzy}"
+ROS_BRIDGE_LIB="$ISAAC_DIR/exts/isaacsim.ros2.bridge/$ROS_DISTRO/lib"
+if [[ ! -d "$ROS_BRIDGE_LIB" ]]; then
+    echo "[error] Isaac Sim ROS 2 bridge 不支持 ROS_DISTRO=$ROS_DISTRO" >&2
+    echo "[error] 找不到目录: $ROS_BRIDGE_LIB" >&2
+    exit 1
+fi
 # DDS 必须和系统其余节点(FAST-LIO / nav2 / ros2_sensors 的 bringup，见 ~/.bashrc)一致，
 # 否则 Isaac 在一种 DDS 上发、消费端在另一种上收，两边互不发现 -> FAST-LIO 收不到
 # /livox/imu、/livox/lidar_raw 等任何数据(话题能 list 到只是因为订阅端在，没有发布端)。
@@ -54,7 +61,14 @@ export ROS_DISTRO=humble
 # 无需另装。因此这里默认对齐到 CycloneDDS；需要单机纯 FastDDS 调试时可 env 覆盖。
 # 注意: CYCLONEDDS_URI(peer/接口配置)从用户环境继承——本脚本没有 unset 它，保持不变。
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
-export LD_LIBRARY_PATH="$ISAAC_DIR/exts/isaacsim.ros2.bridge/humble/lib"
+export LD_LIBRARY_PATH="$ROS_BRIDGE_LIB"
+# 跨子网时可用静态 CycloneDDS peer 绕过无法路由的组播发现。
+# 保留环境变量覆盖能力，方便临时改用其他 DDS 配置。
+if [[ "$RMW_IMPLEMENTATION" == "rmw_cyclonedds_cpp" ]]; then
+    export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file://$SCRIPT_DIR/cyclonedds_lan.xml}"
+fi
+echo "[info] ROS 2 bridge: distro=$ROS_DISTRO, rmw=$RMW_IMPLEMENTATION"
+echo "[info] CycloneDDS config: ${CYCLONEDDS_URI:-default}"
 
 # 3) 若当前终端没有 DISPLAY(典型: 从 Windows SSH 进来), 自动指向本机物理 X 桌面。
 #    窗口会出现在 4090 接的物理显示器上, 需要人在那块屏前才能看到/操作。
