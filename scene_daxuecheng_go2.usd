@@ -1,0 +1,95 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary georef = {
+            int epsg = 32649
+            string note = "与 scene_tools/georef_daxuecheng.json 及 daxuecheng-collision.usdz 同源；机器人改为官方 Go2。"
+            double offset_x = 805116.7969223948
+            double offset_y = 2501731.3395316605
+            double offset_z = 16.54960000049323
+            double scale = 1
+            string source = "L2Pro"
+            bool utm_north = 1
+            int utm_zone = 49
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./scene_daxuecheng_go2.usd"
+        }
+        dictionary go2 = {
+            string note = "官方 USD: third_party/unitree_model/Go2/usd/go2.usd；运动需 unitree_rl_lab Unitree-Go2-Velocity，见 docs/大学城_Go2_Unitree官方扩展接入.md"
+        }
+    }
+    defaultPrim = "World"
+    metersPerUnit = 1
+    # 仍叠 scene_seg_smooth 以复用灯光/地面参考；下方关闭 r1、挂 Go2 + 大学城碰撞
+    subLayers = [
+        @./scene_seg_smooth.usd@
+    ]
+    upAxis = "Z"
+)
+
+over "World"
+{
+    # 停用 r1（原 scene_seg_smooth 中的机器人）
+    over "r1_pro_with_gripper" (
+        active = false
+    )
+    {
+    }
+
+    over "zhichengAB_collision" (
+        active = false
+    )
+    {
+    }
+
+    def "daxuecheng_collision" (
+        prepend payload = @./assets/daxuecheng/daxuecheng-collision.usdz@
+    )
+    {
+    }
+
+    # 官方 Go2；z 需按大学城路面微调（官方 init 约 0.4 m）
+    # 先跑 ./scripts/fetch_unitree_go2_model.sh
+    def Xform "go2" (
+        prepend payload = @./third_party/unitree_model/Go2/usd/go2.usd@
+    )
+    {
+        # 路面约 z=-0.42；bbox 足底约 -0.47@z=-0.02 → 抬高约 5cm
+        double3 xformOp:translate = (0, 0, 0.03)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
+
+# scene_seg_smooth 的 ActionGraph 在舞台根路径（不是 /World/...）
+# Go2 用 *_go2 专用图路径，这里永久关掉全部 r1 遗留图。
+# 注意：仅靠运行时 SetActive(False) 不够——OG 在 open 时已注册，Play 仍会跑幽灵图并 segfault。
+over "ActionGraph_control" (
+    active = false
+)
+{
+}
+
+over "ActionGraph_camera" (
+    active = false
+)
+{
+}
+
+over "ActionGraph_robot" (
+    active = false
+)
+{
+}
+
+over "ActionGraph_lidar" (
+    active = false
+)
+{
+}
+
+over "ActionGraph_imu" (
+    active = false
+)
+{
+}

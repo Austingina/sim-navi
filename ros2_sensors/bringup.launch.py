@@ -49,6 +49,8 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Humble 绑定系统 Python 3.10；勿用 conda 的 python3
+PYTHON3 = "/usr/bin/python3"
 
 
 def generate_launch_description():
@@ -104,14 +106,14 @@ def generate_launch_description():
         # 跑 FAST-LIO 时保持关闭，避免和它抢 base_link 父帧(TF_MULTIPLE_AUTHORITY)。
         ExecuteProcess(
             condition=IfCondition(with_odom_tf),
-            cmd=["python3", os.path.join(HERE, "odom_tf_publisher.py"),
+            cmd=[PYTHON3, os.path.join(HERE, "odom_tf_publisher.py"),
                  "--ros-args", "-p", "use_sim_time:=true"],
             output="screen",
         ),
 
         # ---- GPS 发布 ----
         ExecuteProcess(
-            cmd=["python3", os.path.join(HERE, "gps_publisher.py"),
+            cmd=[PYTHON3, os.path.join(HERE, "gps_publisher.py"),
                  "--ros-args",
                  "-p", "use_sim_time:=true",
                  "-p", ["georef_json:=", georef_json],
@@ -124,7 +126,7 @@ def generate_launch_description():
         # ---- swerve 底盘控制器（可选）----
         ExecuteProcess(
             condition=IfCondition(with_controller),
-            cmd=["python3", os.path.join(HERE, "base_controller.py"),
+            cmd=[PYTHON3, os.path.join(HERE, "base_controller.py"),
                  "--ros-args", "-p", "use_sim_time:=true"],
             output="screen",
         ),
@@ -134,7 +136,7 @@ def generate_launch_description():
         # output="log"：日志只进 ~/.ros/log，不刷屏(高频节点，输出很吵)。
         ExecuteProcess(
             condition=IfCondition(with_livox_pipeline),
-            cmd=["python3", os.path.join(HERE, "pc2_to_livox.py"),
+            cmd=[PYTHON3, os.path.join(HERE, "pc2_to_livox.py"),
                  "--ros-args", "-p", "use_sim_time:=true",
                  "-p", ["publish_points:=", with_points]],
             output="log",

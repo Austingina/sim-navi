@@ -104,8 +104,20 @@ EXTRA_ARGS=(--/rtx/verifyDriverVersion/enabled=false)
 # 5) 启动
 #    注意: 必须把文件转成"绝对路径"。Isaac 的工作目录不是你的当前目录,
 #    传相对路径它会找不到, 然后静默打开一个空的默认场景。
+#
+#    Isaac Sim 6 / Kit 110：
+#      - 默认 /isaac/startup/create_new_stage=true → 总是 New Stage（只有 World/Environment）
+#      - --/app/file/openPath=... 在 omni.kit.window.file 2.x 已失效
+#      因此 GUI/stream 用 --exec scripts/isaac_open_stage.py + ISAAC_OPEN_USD 打开场景。
 TARGET="${1:-}"
+OPEN_STAGE_PY="$SCRIPT_DIR/scripts/isaac_open_stage.py"
 if [[ -n "$TARGET" ]]; then
+    # 拒绝编辑器备份后缀（.usd~）等误输入
+    if [[ "$TARGET" == *'~' ]]; then
+        echo "[error] 路径带尾缀 '~'：$TARGET" >&2
+        echo "[error] 请去掉 ~ 后重试，例如: scene_daxuecheng_go2.usd" >&2
+        exit 1
+    fi
     if [[ "$TARGET" != /* ]]; then
         if [[ -f "$PWD/$TARGET" ]]; then
             TARGET="$PWD/$TARGET"                                   # 相对当前目录
@@ -115,8 +127,28 @@ if [[ -n "$TARGET" ]]; then
     fi
     if [[ ! -f "$TARGET" ]]; then
         echo "[warn] 找不到文件: $TARGET  (将打开空场景)"
+        TARGET=""
     else
         echo "[info] 打开: $TARGET"
+        # GUI / stream：Isaac 6 需异步 open；headless 由 isaac_headless.py 自己 open_stage
+        if [[ "$MODE" != "headless" ]]; then
+            export ISAAC_OPEN_USD="$TARGET"
+            EXTRA_ARGS+=(--/isaac/startup/create_new_stage=false)
+            # 大学城 Go2：开场景 + setup_sensors_go2 + Play（路径走 --exec argv，不靠 env）
+            EXEC_CMD="$OPEN_STAGE_PY --usd $TARGET"
+            if [[ "$(basename "$TARGET")" == "scene_daxuecheng_go2.usd" ]]; then
+                SETUP_PY="${ISAAC_SETUP_SENSORS:-$SCRIPT_DIR/ros2_sensors/setup_sensors_go2.py}"
+                export ISAAC_SETUP_SENSORS="$SETUP_PY"
+                export ISAAC_AUTO_PLAY="${ISAAC_AUTO_PLAY:-1}"
+                EXEC_CMD+=" --setup $SETUP_PY"
+                if [[ "${ISAAC_AUTO_PLAY}" == "1" || "${ISAAC_AUTO_PLAY}" == "true" ]]; then
+                    EXEC_CMD+=" --play"
+                fi
+                echo "[info] Go2 自动: $EXEC_CMD"
+            fi
+            # 注意：整段作为 --exec 的一个参数（含空格），Kit 会当 shell 命令跑
+            EXTRA_ARGS+=(--exec "$EXEC_CMD")
+        fi
     fi
 fi
 
@@ -133,7 +165,8 @@ fi
 #   MAX_DEPEN_VEL=2  刚体解穿透速度上限(m/s)：抑制重建地面小凸起把机器人弹飞/掀翻；
 #                    还弹就调小(1)，太肉/陷地就调大(3~5)；设 0 = 不改(用 PhysX 默认)
 if [[ "$MODE" == "headless" && ( "$(basename "${TARGET:-}")" == scene_seg*.usd ||
-                                  "$(basename "${TARGET:-}")" == scene_daxuecheng.usd ) ]]; then
+                                  "$(basename "${TARGET:-}")" == scene_daxuecheng.usd ||
+                                  "$(basename "${TARGET:-}")" == scene_daxuecheng_go2.usd ) ]]; then
     export ISAAC_VIEWPORT="${ISAAC_VIEWPORT:-0}"
     export ISAAC_HZ="${ISAAC_HZ:-0}"
     export ISAAC_RENDER_HZ="${ISAAC_RENDER_HZ:-10}"
@@ -153,17 +186,9 @@ case "$MODE" in
   stream)
     # 无头 + WebRTC 串流: 官方 streaming kit 自带 --no-window。需在 Streaming Client 里 Play。
     echo "[info] 串流模式(WebRTC)。用 Isaac Sim Streaming Client 连本机 IP, 在客户端点 Play。"
-    if [[ -n "$TARGET" && -f "$TARGET" ]]; then
-        exec "$ISAAC_DIR/isaac-sim.streaming.sh" "${EXTRA_ARGS[@]}" --/app/file/openPath="$TARGET"
-    else
-        exec "$ISAAC_DIR/isaac-sim.streaming.sh" "${EXTRA_ARGS[@]}"
-    fi
+    exec "$ISAAC_DIR/isaac-sim.streaming.sh" "${EXTRA_ARGS[@]}"
     ;;
   *)
-    if [[ -n "$TARGET" && -f "$TARGET" ]]; then
-        exec "$ISAAC_DIR/isaac-sim.sh" "${EXTRA_ARGS[@]}" --/app/file/openPath="$TARGET"
-    else
-        exec "$ISAAC_DIR/isaac-sim.sh" "${EXTRA_ARGS[@]}"
-    fi
+    exec "$ISAAC_DIR/isaac-sim.sh" "${EXTRA_ARGS[@]}"
     ;;
 esac

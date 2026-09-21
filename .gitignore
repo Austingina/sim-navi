@@ -56,3 +56,6 @@ build/
 # ===== Isaac 无头运行时保存点（每台机器/每个场景的个人数据）=====
 /headless_waypoints.json
 /headless_waypoints.json.tmp
+
+# ===== third_party =====
+third_party/**/.cache/

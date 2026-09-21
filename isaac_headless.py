@@ -141,22 +141,28 @@ if _lidar_hres > 0 or _lidar_vres > 0:
     _v = _lidar_vres or 1.0
     print(f"[headless] 雷达分辨率 H={_h:g}° V={_v:g}° -> 约 {int(360 / _h) * int(59 / _v)} 点/帧 "
           f"(ISAAC_LIDAR_HRES/VRES) —— 减 WLAN 带宽和下游转换负担。")
-_lidar_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_lidar/Gate")
+_stage = omni.usd.get_context().get_stage()
+_lidar_gate = _stage.GetPrimAtPath("/ActionGraph_lidar_go2/Gate")
+if not _lidar_gate.IsValid():
+    _lidar_gate = _stage.GetPrimAtPath("/ActionGraph_lidar/Gate")
 if _lidar_gate.IsValid():
     # standalone 的 step(render=True) 会产生两个 playback tick；仅无头运行时设2去重。
     # USD/GUI 保持 step=1，不影响交互模式的一帧一发。
     _lidar_gate.GetAttribute("inputs:step").Set(2)
 # 机器人图(/tf、/odom_gt、/joint_states)同样挂在 OnPlaybackTick 上，同样受双 tick 影响。
 # 用同一套路把它的 Gate 设 2 去重：否则这些话题会成对发相同时间戳，tf2 报 TF_REPEATED_DATA。
-_robot_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_robot/Gate")
+_robot_gate = _stage.GetPrimAtPath("/ActionGraph_robot_go2/Gate")
+if not _robot_gate.IsValid():
+    _robot_gate = _stage.GetPrimAtPath("/ActionGraph_robot/Gate")
 if _robot_gate.IsValid():
     _robot_gate.GetAttribute("inputs:step").Set(2)
-# /clock 与 IMU 共用物理步触发源，但通过 Gate 均匀降频。默认 200/20=每10步发布，
-# 既没有 playback 双 tick 的成对突发，也不承担 200Hz ROS clock 的额外开销。
+# /clock 与 IMU：Go2 用 OnPlaybackTick Gate；r1 用 OnPhysicsStep ClockGate
 CLOCK_HZ = float(_os.environ.get("ISAAC_CLOCK_HZ", "20"))
 _clock_step = max(1, round(PHYS_HZ / CLOCK_HZ)) if CLOCK_HZ > 0 else 1
-_clock_gate = omni.usd.get_context().get_stage().GetPrimAtPath("/ActionGraph_imu/ClockGate")
-if _clock_gate.IsValid():
+_clock_gate = _stage.GetPrimAtPath("/ActionGraph_imu_go2/Gate")
+if not _clock_gate.IsValid():
+    _clock_gate = _stage.GetPrimAtPath("/ActionGraph_imu/ClockGate")
+if _clock_gate.IsValid() and _clock_gate.GetAttribute("inputs:step"):
     _clock_gate.GetAttribute("inputs:step").Set(_clock_step)
 
 # ---- 抗翻车物理调参 ----
