@@ -608,7 +608,7 @@ def Xform "World"
     }
 
     def "zhichengAB_collision" (
-        prepend payload = @./assets/zhichengAB/zhichengAB-collision-smooth.usdz@
+        prepend payload = @./assets/zhichengAB/zhichengAB-collision-smooth-v3.usdz@
     )
     {
     }
@@ -1455,4 +1455,3 @@ def OmniGraph "ActionGraph_camera"
         int node:typeVersion = 2
     }
 }
-

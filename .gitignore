@@ -11,10 +11,13 @@ venv/
 
 # ============================================================
 # 大资产：重建/场景数据，远超 GitHub 100MB 限制，不进仓库。
-# 全部统一收纳在 assets/ 下，整目录排除。
-# 获取或重新生成方式见根 README「资产与数据」一节。
+# 全部统一收纳在 assets/ 下，整目录排除（保留 assets/README.md
+# 与 assets/.gitkeep）。运行用 usdz 见 GitHub Release assets-v1，
+# 用 scripts/fetch_assets.sh 下载。详见 assets/README.md。
 # ============================================================
-/assets/
+/assets/**
+!/assets/README.md
+!/assets/.gitkeep
 
 # 地理配准结果（小且关键）随仓库跟踪 —— 由 make_georef.py /
 # add_collision_to_usdz.py 落在工具目录，不在 assets/ 内，默认即被跟踪。
@@ -49,3 +52,7 @@ Thumbs.db
 install/
 log/
 build/
+
+# ===== Isaac 无头运行时保存点（每台机器/每个场景的个人数据）=====
+/headless_waypoints.json
+/headless_waypoints.json.tmp

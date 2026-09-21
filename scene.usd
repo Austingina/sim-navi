@@ -608,7 +608,7 @@ def Xform "World"
     }
 
     def "zhichengAB_collision" (
-        prepend payload = @./assets/zhichengAB/zhichengAB-collision.usdz@
+        prepend payload = @./assets/zhichengAB/zhichengAB-collision-smooth-v3.usdz@
     )
     {
     }

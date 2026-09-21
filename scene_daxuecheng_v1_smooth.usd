@@ -1,0 +1,46 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary georef = {
+            int epsg = 32649
+            string note = "local + offset = UTM(EPSG:32649); 与 scene_tools/georef_daxuecheng.json 及 daxuecheng-collision-v1-smooth.usdz 同源。"
+            double offset_x = 805116.7969223948
+            double offset_y = 2501731.3395316605
+            double offset_z = 16.54960000049323
+            double scale = 1
+            string source = "L2Pro"
+            bool utm_north = 1
+            int utm_zone = 49
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./scene_daxuecheng_v1_smooth.usd"
+        }
+    }
+    defaultPrim = "World"
+    metersPerUnit = 1
+    subLayers = [
+        @./scene_seg_smooth.usd@
+    ]
+    upAxis = "Z"
+)
+
+over "World"
+{
+    over "r1_pro_with_gripper"
+    {
+        # v1 网格原点附近路面约 z=-0.39；机器人模型轮底相对根节点约 -0.30。
+        double3 xformOp:translate = (0, 0, -0.09)
+    }
+
+    over "zhichengAB_collision" (
+        active = false
+    )
+    {
+    }
+
+    def "daxuecheng_collision_v1_smooth" (
+        prepend payload = @./assets/daxuecheng/daxuecheng-collision-v1-smooth.usdz@
+    )
+    {
+    }
+}

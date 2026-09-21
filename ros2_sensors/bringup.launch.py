@@ -62,23 +62,16 @@ def generate_launch_description():
     georef_json = LaunchConfiguration("georef_json")
 
     default_georef = os.path.normpath(
-        os.path.join(HERE, "..", "scene_tools", "georef.json"))
-    default_cyclonedds_uri = "file://" + os.path.normpath(
-        os.path.join(HERE, "..", "cyclonedds_lan.xml"))
-
+        os.path.join(HERE, "..", "scene_tools", "georef_daxuecheng.json"))
     return LaunchDescription([
-        # 与 Isaac 使用同一 CycloneDDS 静态 peer，使本 launch 的所有
-        # 子进程也能跨子网发现 10.229.66.59。显式 export 的值优先。
+        # 本机单机：ROS_LOCALHOST_ONLY=1，不设 CYCLONEDDS_URI（避免 lo 重复绑定）。
         SetEnvironmentVariable(
             "RMW_IMPLEMENTATION",
             os.environ.get("RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp")),
         SetEnvironmentVariable(
             "ROS_DOMAIN_ID", os.environ.get("ROS_DOMAIN_ID", "7")),
         SetEnvironmentVariable(
-            "ROS_LOCALHOST_ONLY", os.environ.get("ROS_LOCALHOST_ONLY", "0")),
-        SetEnvironmentVariable(
-            "CYCLONEDDS_URI",
-            os.environ.get("CYCLONEDDS_URI", default_cyclonedds_uri)),
+            "ROS_LOCALHOST_ONLY", os.environ.get("ROS_LOCALHOST_ONLY", "1")),
 
         DeclareLaunchArgument("spawn_x", default_value="0.0",
                               description="机器人出生世界坐标 X (决定 GPS 原点)"),

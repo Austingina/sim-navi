@@ -54,6 +54,10 @@
 ```
 > `--headless` 会自动 Play；`--gui` / `--stream` 记得**手动点 Play**，否则 `/clock` 不走、TF 会时间外推报错。
 > 只想在 GUI 里看画面(不接 ROS)时用旧脚本 `./open_isaac_scene.sh`。
+>
+> `--headless` 运行时的终端控制（输入后回车）：`r` 整场复位回起点，`u` 原地扶正，
+> `s` 保存当前位姿，`m` 打开保存点菜单并输入编号瞬移，`q` 退出。点位保存在仓库根目录的
+> `headless_waypoints.json`，也可通过 `ISAAC_WAYPOINT_FILE=/path/to/file.json` 指定。
 
 > **传感器图和控制图已经固化保存在 `scene.usd` 里**（OmniGraph + 传感器 prim 都是 USD 持久化的），
 > **平时开箱即用，不必再跑 `setup_sensors.py` / `setup_control.py`。**

@@ -349,6 +349,7 @@ elif _nurec is not None:
 import time  # noqa: E402
 import signal  # noqa: E402
 import threading  # noqa: E402
+import json  # noqa: E402
 
 # 实时节流：把每秒步进数(=物理步频)钉在 TARGET_HZ。每次迭代恰好推进 1 个物理步，
 # 循环频率就是物理步频；默认钉在 PHYS_HZ 让 RTF≈1(IMU 随之稳定在 PHYS_HZ)。
@@ -376,11 +377,13 @@ print(f"[headless] 渲染抽帧：每 {RENDER_EVERY} 步渲1次 "
       f"雷达≈{PHYS_HZ / RENDER_EVERY:.0f}Hz；"
       f"/clock={PHYS_HZ / _clock_step:.0f}Hz、IMU={PHYS_HZ:.0f}Hz 不受影响)。")
 
-# 交互控制：无头没有 GUI 的 Stop/Play，这里给复位/扶正/退出入口。
+# 交互控制：无头没有 GUI 的 Stop/Play，这里给复位/扶正/点位保存/瞬移/退出入口。
 # 后台线程只置标志位，真正的动作由主循环执行(跨线程调物理不安全)。
 #   1) r + 回车 = 整场复位(机器人回 USD 起点)；u + 回车 = 原地扶正；q + 回车 = 退出。
+#      s + 回车 = 保存当前点；m + 回车 = 打开历史点位菜单并输入编号瞬移。
 #   2) kill -USR1 <pid> = 远程整场复位；kill -USR2 <pid> = 远程原地扶正。
-_cmd = {"reset": False, "standup": False, "quit": False}
+_cmd = {"reset": False, "standup": False, "save": False,
+        "teleport": None, "quit": False}
 
 # 原地扶正：保留 xy，姿态归单位四元数，z 抬 ISAAC_STANDUP_Z(默认 0.4m)，清零线/角速度。
 # 不整场 reset，/clock 与 SLAM 状态可继续；倒地时按 u 即可。
@@ -388,6 +391,106 @@ STANDUP_Z = float(_os.environ.get("ISAAC_STANDUP_Z", "0.4"))
 ROBOT_ART_PRIM = _os.environ.get(
     "ISAAC_ROBOT_ART", "/World/r1_pro_with_gripper/base_link")
 _standup_art = None
+
+# 保存世界坐标和四元数(w,x,y,z)，不保存速度/关节状态。文件可通过环境变量改位置。
+WAYPOINT_FILE = _os.path.abspath(_os.path.expanduser(_os.environ.get(
+    "ISAAC_WAYPOINT_FILE",
+    _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                  "headless_waypoints.json"))))
+
+
+def _load_waypoints():
+    if not _os.path.isfile(WAYPOINT_FILE):
+        return []
+    try:
+        with open(WAYPOINT_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        points = data.get("waypoints", []) if isinstance(data, dict) else []
+        return [p for p in points
+                if isinstance(p, dict) and len(p.get("position", [])) == 3
+                and len(p.get("orientation", [])) == 4]
+    except Exception as e:  # noqa: BLE001
+        print(f"[waypoint] 读取失败 {WAYPOINT_FILE}: {e}（本次从空列表开始）")
+        return []
+
+
+_waypoints = _load_waypoints()
+
+
+def _save_waypoint_file():
+    """先写临时文件再替换，避免退出/断电留下半截 JSON。"""
+    folder = _os.path.dirname(WAYPOINT_FILE)
+    if folder:
+        _os.makedirs(folder, exist_ok=True)
+    tmp = WAYPOINT_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"version": 1, "waypoints": _waypoints}, f,
+                  ensure_ascii=False, indent=2)
+        f.write("\n")
+    _os.replace(tmp, WAYPOINT_FILE)
+
+
+def _get_robot_articulation():
+    global _standup_art  # noqa: PLW0603
+    if _standup_art is None:
+        from isaacsim.core.prims import SingleArticulation  # noqa: PLC0415
+        _standup_art = SingleArticulation(prim_path=ROBOT_ART_PRIM)
+        _standup_art.initialize()
+    return _standup_art
+
+
+def _stop_robot_motion(art):
+    import numpy as np  # noqa: PLC0415
+    try:
+        art.set_linear_velocity(np.zeros(3, dtype=np.float64))
+        art.set_angular_velocity(np.zeros(3, dtype=np.float64))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        n = art.num_dof
+        if n and n > 0:
+            art.set_joint_velocities(np.zeros(n, dtype=np.float64))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _save_current_waypoint():
+    """在物理主线程读取并持久化机器人当前世界位姿。"""
+    try:
+        art = _get_robot_articulation()
+        pos, ori = art.get_world_pose()
+        used = {p.get("name") for p in _waypoints}
+        number = 1
+        while f"point_{number:03d}" in used:
+            number += 1
+        point = {
+            "name": f"point_{number:03d}",
+            "position": [float(v) for v in pos],
+            "orientation": [float(v) for v in ori],
+        }
+        _waypoints.append(point)
+        _save_waypoint_file()
+        xyz = point["position"]
+        print(f"[waypoint] 已保存 {point['name']} @ "
+              f"({xyz[0]:.2f}, {xyz[1]:.2f}, {xyz[2]:.2f}) -> {WAYPOINT_FILE}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[waypoint] 保存失败: {e}")
+
+
+def _teleport_to_waypoint(index):
+    """瞬移到指定列表下标，并清除所有运动速度。"""
+    import numpy as np  # noqa: PLC0415
+    try:
+        point = _waypoints[index]
+        art = _get_robot_articulation()
+        pos = np.asarray(point["position"], dtype=np.float64)
+        ori = np.asarray(point["orientation"], dtype=np.float64)
+        art.set_world_pose(position=pos, orientation=ori)
+        _stop_robot_motion(art)
+        print(f"[waypoint] 已瞬移到 {point['name']} @ "
+              f"({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f})")
+    except Exception as e:  # noqa: BLE001
+        print(f"[waypoint] 瞬移失败: {e}")
 
 
 def _standup_robot():
@@ -400,9 +503,7 @@ def _standup_robot():
         print(f"[standup] 导入 SingleArticulation 失败: {e}")
         return
     try:
-        if _standup_art is None:
-            _standup_art = SingleArticulation(prim_path=ROBOT_ART_PRIM)
-            _standup_art.initialize()
+        _standup_art = _get_robot_articulation()
         pos, _ori = _standup_art.get_world_pose()
         # 保留 xy；z 至少抬起 STANDUP_Z，避免埋进地面
         new_pos = np.array(
@@ -412,17 +513,7 @@ def _standup_robot():
         new_ori = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
         _standup_art.set_world_pose(position=new_pos, orientation=new_ori)
         # 清速度，否则倒地惯性下一帧又把机器人甩翻
-        try:
-            _standup_art.set_linear_velocity(np.zeros(3, dtype=np.float64))
-            _standup_art.set_angular_velocity(np.zeros(3, dtype=np.float64))
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            n = _standup_art.num_dof
-            if n and n > 0:
-                _standup_art.set_joint_velocities(np.zeros(n, dtype=np.float64))
-        except Exception:  # noqa: BLE001
-            pass
+        _stop_robot_motion(_standup_art)
         print(f"[standup] 扶正 @ xy=({new_pos[0]:.2f},{new_pos[1]:.2f}) "
               f"z={new_pos[2]:.2f}(+{STANDUP_Z:g}) 姿态=identity")
     except Exception as e:  # noqa: BLE001
@@ -431,13 +522,40 @@ def _standup_robot():
 
 
 def _stdin_loop():
+    menu_open = False
     try:
         for line in sys.stdin:
             c = line.strip().lower()
+            if menu_open:
+                menu_open = False
+                if c in ("", "c", "cancel"):
+                    print("[waypoint] 已取消瞬移。")
+                    continue
+                try:
+                    choice = int(c) - 1
+                    if not 0 <= choice < len(_waypoints):
+                        raise ValueError
+                    _cmd["teleport"] = choice
+                except ValueError:
+                    print(f"[waypoint] 无效编号 {c!r}，已取消。")
+                continue
             if c == "r":
                 _cmd["reset"] = True
             elif c == "u":
                 _cmd["standup"] = True
+            elif c == "s":
+                _cmd["save"] = True
+            elif c == "m":
+                if not _waypoints:
+                    print("[waypoint] 暂无保存点。先输入 s + 回车保存当前位置。")
+                    continue
+                print("\n[waypoint] 瞬移菜单：")
+                for i, point in enumerate(_waypoints, 1):
+                    p = point["position"]
+                    print(f"  {i}. {point['name']}: "
+                          f"x={p[0]:.2f}, y={p[1]:.2f}, z={p[2]:.2f}")
+                print("请输入编号并回车（c 取消）：", end="", flush=True)
+                menu_open = True
             elif c == "q":
                 _cmd["quit"] = True
                 break
@@ -448,7 +566,9 @@ def _stdin_loop():
 threading.Thread(target=_stdin_loop, daemon=True).start()
 signal.signal(signal.SIGUSR1, lambda *_: _cmd.update(reset=True))
 signal.signal(signal.SIGUSR2, lambda *_: _cmd.update(standup=True))
-print(f"[headless] 控制：r=整场复位  u=原地扶正(+{STANDUP_Z:g}m)  q=退出; "
+print(f"[headless] 控制：r=整场复位  u=原地扶正(+{STANDUP_Z:g}m)  "
+      "s=保存当前位置  m=点位瞬移菜单  q=退出（命令后均需回车）；\n"
+      f"[headless] 已载入 {len(_waypoints)} 个保存点 ({WAYPOINT_FILE})；"
       f"远程 kill -USR1 {_os.getpid()} 复位 / kill -USR2 {_os.getpid()} 扶正。")
 
 # 运行中每 5 秒打印一次实时率 RTF = 仿真时间推进 / 墙上时间。
@@ -479,6 +599,13 @@ try:
         if _cmd["standup"]:
             _cmd["standup"] = False
             _standup_robot()
+        if _cmd["save"]:
+            _cmd["save"] = False
+            _save_current_waypoint()
+        if _cmd["teleport"] is not None:
+            _teleport_index = _cmd["teleport"]
+            _cmd["teleport"] = None
+            _teleport_to_waypoint(_teleport_index)
 
         # 渲染抽帧：非渲染步只推物理(便宜)，渲染步才付相机渲染开销。
         # odom/tf/雷达/相机随渲染帧；/clock 与 IMU 由 OnPhysicsStep 驱动。

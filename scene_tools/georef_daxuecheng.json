@@ -1,0 +1,24 @@
+{
+  "epsg": 32649,
+  "utm_zone": 49,
+  "utm_north": true,
+  "offset_x": 805116.7969223948,
+  "offset_y": 2501731.3395316605,
+  "offset_z": 16.54960000049323,
+  "shift_x": 0.0,
+  "shift_y": 0.0,
+  "shift_z": 0.0,
+  "scale": 1.0,
+  "source": "L2Pro",
+  "local_bounds_min": [
+    -163.0526123,
+    -468.6804199,
+    -14.3221502
+  ],
+  "local_bounds_max": [
+    225.2881927,
+    120.938858,
+    104.9706802
+  ],
+  "_note": "local + offset = UTM(EPSG); scale=1 表示 1 场景单位 = 1 UTM 米; scene.usd/gps_publisher 直接读此文件，无需手工标定。"
+}

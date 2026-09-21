@@ -6,6 +6,17 @@
 
 > 详细的启动步骤、话题、GPS 原理、碰撞地图生成等，见 **[`ros2_sensors/README.md`](ros2_sensors/README.md)**。
 
+## 资产下载（GitHub Release）
+
+场景 usdz **不在 Git 中**。克隆后请下载运行包：
+
+```bash
+./scripts/fetch_assets.sh
+# 或打开 https://github.com/Austingina/sim-navi/releases/tag/assets-v1
+```
+
+说明见 [`assets/README.md`](assets/README.md)。大学城操作见 [`docs/大学城路线仿真操作指南.md`](docs/大学城路线仿真操作指南.md)。
+
 ## 目录结构
 
 ```
@@ -61,6 +72,23 @@
 ./run_isaacsim.sh --gui      scene.usd         # 本机物理显示器开 GUI
 ./run_isaacsim.sh --stream   scene.usd         # 无头 + WebRTC 串流（Isaac Sim Streaming Client 远程看）
 ```
+
+大学城场景使用独立入口和地理配置，不会覆盖 `zhichengAB`：
+
+```bash
+./run_isaacsim.sh --headless scene_daxuecheng.usd
+ros2 launch ros2_sensors/bringup.launch.py \
+  georef_json:=$PWD/scene_tools/georef_daxuecheng.json \
+  spawn_x:=0 spawn_y:=0
+```
+
+`scene_daxuecheng.usd` 引用 `assets/daxuecheng/daxuecheng-collision.usdz`（高斯画面、隐藏碰撞网格、
+内嵌 georef），机器人默认出生在场景原点；若在 Isaac 中移动出生点，需同步修改上述
+`spawn_x/spawn_y`。
+
+纯无头模式运行中可在启动终端输入命令并回车：`r` 回到场景起点，`u` 原地扶正，
+`s` 保存当前点，`m` 打开保存点菜单并按编号瞬移，`q` 退出。保存点默认持久化到
+`headless_waypoints.json`（可用 `ISAAC_WAYPOINT_FILE` 改路径），重启后仍可使用。
 
 传感器图/控制图已固化在 USD 里，开箱即用；只有改传感器/控制配置时才回去重跑
 `ros2_sensors/setup_sensors.py` / `setup_control.py`（幂等建图脚本，跑完存盘）。

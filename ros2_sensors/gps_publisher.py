@@ -35,7 +35,7 @@ from tf2_ros import StaticTransformBroadcaster
 # georef.json 默认位置（由 scene_tools/make_georef.py 从 PLY 生成）
 _DEFAULT_GEOREF = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "..", "scene_tools", "georef.json"))
+    "..", "scene_tools", "georef_daxuecheng.json"))
 
 
 def utm_to_latlon(easting, northing, zone=49, north=True):
@@ -88,9 +88,12 @@ class GpsPublisher(Node):
         self.declare_parameter("scale", 1.0)                    # 1米odom对应多少米UTM(本场景=1)
         self.declare_parameter("yaw_deg", 0.0)                  # odom 系 -> ENU 旋转(度, CCW正)
         # 机器人出生世界坐标：决定 GPS 原点平移。换出生点时改这里。
-        self.declare_parameter("spawn_x", 5.0)
-        self.declare_parameter("spawn_y", 0.0)
-        self.declare_parameter("spawn_z", 0.0)
+        # dynamic_typing：launch 传 spawn_x:=0 时会变成 INTEGER，需兼容。
+        from rcl_interfaces.msg import ParameterDescriptor
+        _float = ParameterDescriptor(dynamic_typing=True)
+        self.declare_parameter("spawn_x", 0.0, _float)
+        self.declare_parameter("spawn_y", 0.0, _float)
+        self.declare_parameter("spawn_z", 0.0, _float)
         # 通用
         self.declare_parameter("odom_topic", "/odom_gt")
         self.declare_parameter("fix_topic", "/gps/fix")
@@ -110,9 +113,9 @@ class GpsPublisher(Node):
         self.oy = self.get_parameter("offset_y").value
         self.oz = self.get_parameter("offset_z").value
         self._load_georef(self.get_parameter("georef_json").value)
-        self.spawn_x = self.get_parameter("spawn_x").value
-        self.spawn_y = self.get_parameter("spawn_y").value
-        self.spawn_z = self.get_parameter("spawn_z").value
+        self.spawn_x = float(self.get_parameter("spawn_x").value)
+        self.spawn_y = float(self.get_parameter("spawn_y").value)
+        self.spawn_z = float(self.get_parameter("spawn_z").value)
         # GPS 原点 = offset + scale*R(yaw)*spawn。
         # spawn 与 odom 同在“新场景世界系”，换算到已配准系时同样要过 yaw/scale，
         # 否则 yaw≠0 的场景(如新区域相对旧场景转了 ~91°)原点会算偏几米。

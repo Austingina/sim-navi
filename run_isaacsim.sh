@@ -17,7 +17,8 @@
 
 set -e
 
-ISAAC_DIR="$HOME/isim"
+#ISAAC_DIR="$HOME/isim"
+ISAAC_DIR="$HOME/isaacsim/current"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 解析可选的模式开关(必须放在第一个参数): --gui(默认) / --stream / --headless
@@ -46,8 +47,11 @@ unset PYTHONPATH
 #      这里只加回 bridge 扩展自带的当前 ROS 发行版库目录，
 #      不引入系统 ROS，避免 TLS 崩溃。未 source ROS 时默认使用 Jazzy。
 #      注意: 不要在这个脚本里 source /opt/ros/*/setup.bash，那会重新污染库路径。
-export ROS_DISTRO="${ROS_DISTRO:-jazzy}"
-ROS_BRIDGE_LIB="$ISAAC_DIR/exts/isaacsim.ros2.bridge/$ROS_DISTRO/lib"
+#export ROS_DISTRO="${ROS_DISTRO:-jazzy}"
+#ROS_BRIDGE_LIB="$ISAAC_DIR/exts/isaacsim.ros2.bridge/$ROS_DISTRO/lib"
+export ROS_DISTRO="${ROS_DISTRO:-humble}"
+ROS_BRIDGE_LIB="$ISAAC_DIR/exts/isaacsim.ros2.core/$ROS_DISTRO/lib"
+
 if [[ ! -d "$ROS_BRIDGE_LIB" ]]; then
     echo "[error] Isaac Sim ROS 2 bridge 不支持 ROS_DISTRO=$ROS_DISTRO" >&2
     echo "[error] 找不到目录: $ROS_BRIDGE_LIB" >&2
@@ -64,9 +68,14 @@ export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 export LD_LIBRARY_PATH="$ROS_BRIDGE_LIB"
 # 跨子网时可用静态 CycloneDDS peer 绕过无法路由的组播发现。
 # 保留环境变量覆盖能力，方便临时改用其他 DDS 配置。
-if [[ "$RMW_IMPLEMENTATION" == "rmw_cyclonedds_cpp" ]]; then
-    export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file://$SCRIPT_DIR/cyclonedds_lan.xml}"
-fi
+# 本机单机：用 CycloneDDS 默认配置，不指定 cyclonedds_lan.xml
+# if [[ "$RMW_IMPLEMENTATION" == "rmw_cyclonedds_cpp" ]]; then
+#     export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file://$SCRIPT_DIR/cyclonedds_lan.xml}"
+# fi
+# 本机单机：与 setup_ros_local.sh 共用 cyclonedds_localhost.xml（只提 participant 上限，不绑 lo）
+export ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-1}"
+export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file://$SCRIPT_DIR/cyclonedds_localhost.xml}"
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 echo "[info] ROS 2 bridge: distro=$ROS_DISTRO, rmw=$RMW_IMPLEMENTATION"
 echo "[info] CycloneDDS config: ${CYCLONEDDS_URI:-default}"
 
@@ -123,7 +132,8 @@ fi
 #   CLOCK_HZ=20      /clock 由物理步 Gate 均匀发布；IMU=200Hz；二者不受渲染抽帧影响
 #   MAX_DEPEN_VEL=2  刚体解穿透速度上限(m/s)：抑制重建地面小凸起把机器人弹飞/掀翻；
 #                    还弹就调小(1)，太肉/陷地就调大(3~5)；设 0 = 不改(用 PhysX 默认)
-if [[ "$MODE" == "headless" && "$(basename "${TARGET:-}")" == scene_seg*.usd ]]; then
+if [[ "$MODE" == "headless" && ( "$(basename "${TARGET:-}")" == scene_seg*.usd ||
+                                  "$(basename "${TARGET:-}")" == scene_daxuecheng.usd ) ]]; then
     export ISAAC_VIEWPORT="${ISAAC_VIEWPORT:-0}"
     export ISAAC_HZ="${ISAAC_HZ:-0}"
     export ISAAC_RENDER_HZ="${ISAAC_RENDER_HZ:-10}"

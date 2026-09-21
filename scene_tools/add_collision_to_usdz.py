@@ -59,7 +59,7 @@ import make_georef  # 同目录：从 PLY 读取地理配准
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def bake_georef(root_layer, ply_path):
+def bake_georef(root_layer, ply_path, json_path):
     """从 PLY 读地理配准，写进根层 customLayerData['georef']，并落 georef.json。
     这样新 usdz 自带“标定结果”，gps_publisher.py 直接读 georef.json，无需手工标定。"""
     if not ply_path or not os.path.isfile(ply_path):
@@ -79,7 +79,8 @@ def bake_georef(root_layer, ply_path):
     layer.Save()
     # 2) 落 georef.json 到工具目录(随仓库跟踪)，供 gps_publisher.py / scene.usd 读。
     #    成品 usdz 在 gitignore 的 assets/ 下，不能把唯一可信源放那里。
-    json_path = os.path.join(PROJECT_DIR, "georef.json")
+    json_path = os.path.abspath(json_path)
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)
     with open(json_path, "w") as f:
         json.dump(georef, f, indent=2, ensure_ascii=False)
     print(f"[georef] 已写入 usdz customLayerData + {os.path.relpath(json_path)} "
@@ -282,6 +283,8 @@ def main():
     ap.add_argument("--ply",
                     default=os.path.join(PROJECT_DIR, "..", "assets", "zhichengAB", "PLY", "point_cloud", "iteration_100", "point_cloud.ply"),
                     help="3DGS PLY，用于自动提取地理配准(offset/epsg/scale)并焊进新 usdz")
+    ap.add_argument("--georef-out", default=os.path.join(PROJECT_DIR, "georef.json"),
+                    help="同时写出的 georef JSON；多场景时应为每个场景指定独立文件")
     ap.add_argument("--approximation", default="none",
                     choices=["none", "meshSimplification", "convexDecomposition", "convexHull"])
     ap.add_argument("--voxel", type=float, default=0.04,
@@ -349,7 +352,7 @@ def main():
 
         # 3.5) 把地理配准(来自 PLY)焊进根层 customLayerData + 落 georef.json
         print("[3.5] 焊入地理配准 georef ...")
-        bake_georef(root_layer, args.ply)
+        bake_georef(root_layer, args.ply, args.georef_out)
 
         # 4) 重新打包成自包含 usdz (跟随依赖, 含 .nurec)
         print(f"[4/4] 重新打包 -> {args.out} (含 1.6GB .nurec, 需要一会儿) ...")
