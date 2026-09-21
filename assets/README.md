@@ -11,7 +11,7 @@ Release 标签：见仓库 [Releases](https://github.com/Austingina/sim-navi/rel
 | `assets-daxuecheng-runtime.tar` | `daxuecheng/daxuecheng-collision*.usdz` | 大学城三场景入口 |
 | `assets-zhichengAB-collision.tar` | `zhichengAB/zhichengAB-collision.usdz` | `scene_seg.usd` |
 | `assets-zhichengAB-collision-smooth-v3.tar` | `zhichengAB/zhichengAB-collision-smooth-v3.usdz` | `scene.usd` / `scene_seg_smooth.usd` |
-| `assets-zhichengAB-collision-smoother.tar` | `zhichengAB/zhichengAB-collision-smoother.usdz` | `scene_seg_nocam.usd` |
+| `assets-zhichengAB-collision-smoother.tar.part0`–`part2` | 拼接后解压得 `zhichengAB/zhichengAB-collision-smoother.usdz` | `scene_seg_nocam.usd`（分片避免慢网上传超时） |
 
 ### 一键下载（需 [GitHub CLI](https://cli.github.com/)）
 
@@ -30,23 +30,15 @@ gh release download assets-v1 -R Austingina/sim-navi \
   -p 'assets-daxuecheng-runtime.tar' \
   -p 'assets-zhichengAB-collision.tar' \
   -p 'assets-zhichengAB-collision-smooth-v3.tar' \
-  -p 'assets-zhichengAB-collision-smoother.tar'
-tar -xf assets-daxuecheng-runtime.tar
-tar -xf assets-zhichengAB-collision.tar
-tar -xf assets-zhichengAB-collision-smooth-v3.tar
-tar -xf assets-zhichengAB-collision-smoother.tar
-# tar 内路径已含 assets/...，若在 assets/ 下解压会多一层；推荐在仓库根解压：
-# cd .. && tar -xf assets/*.tar
-```
-
-**推荐**在仓库根目录解压（tar 内路径为 `assets/...`）：
-
-```bash
+  -p 'assets-zhichengAB-collision-smoother.tar.part*'
+# tar 内路径已含 assets/...，推荐在仓库根解压：
 cd /path/to/sim-navi
 tar -xf /path/to/assets-daxuecheng-runtime.tar
 tar -xf /path/to/assets-zhichengAB-collision.tar
 tar -xf /path/to/assets-zhichengAB-collision-smooth-v3.tar
-tar -xf /path/to/assets-zhichengAB-collision-smoother.tar
+cat /path/to/assets-zhichengAB-collision-smoother.tar.part{0,1,2} \
+  > /tmp/assets-zhichengAB-collision-smoother.tar
+tar -xf /tmp/assets-zhichengAB-collision-smoother.tar
 ls assets/daxuecheng/daxuecheng-collision.usdz
 ls assets/zhichengAB/zhichengAB-collision-smooth-v3.usdz
 ```
