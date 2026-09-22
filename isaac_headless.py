@@ -85,6 +85,37 @@ open_stage(USD_PATH)
 while is_stage_loading():
     simulation_app.update()
 
+# Go2 场景：USD 里没有预挂 Mid360，需跑 setup_sensors_go2（与 GUI isaac_open_stage 对齐）
+_stage0 = omni.usd.get_context().get_stage()
+_go2_lidar = _stage0.GetPrimAtPath("/World/go2/base/livox_frame")
+_is_go2 = "scene_daxuecheng_go2" in _os.path.basename(USD_PATH) or (
+    _stage0.GetPrimAtPath("/World/go2").IsValid()
+    and (
+        not _stage0.GetPrimAtPath("/World/r1_pro_with_gripper").IsValid()
+        or not _stage0.GetPrimAtPath("/World/r1_pro_with_gripper").IsActive()
+    )
+)
+if _is_go2 and not _go2_lidar.IsValid():
+    _script_dir = _os.path.dirname(_os.path.abspath(__file__))
+    _setup_py = _os.environ.get(
+        "ISAAC_SETUP_SENSORS",
+        _os.path.join(_script_dir, "ros2_sensors", "setup_sensors_go2.py"),
+    )
+    if _os.path.isfile(_setup_py):
+        import importlib.util
+
+        print(f"[headless] Go2：运行传感器 setup → {_setup_py}")
+        _spec = importlib.util.spec_from_file_location("setup_sensors_go2", _setup_py)
+        _mod = importlib.util.module_from_spec(_spec)
+        assert _spec.loader is not None
+        _spec.loader.exec_module(_mod)
+        if hasattr(_mod, "setup"):
+            _mod.setup()
+        for _ in range(5):
+            simulation_app.update()
+    else:
+        print(f"[headless] WARN: 找不到 setup_sensors_go2: {_setup_py}")
+
 # ISAAC_VIEWPORT=0 表示本次不要相机数据。仅 disable_viewport_updates 还不够：
 # ActionGraph_camera 创建的 Replicator render products 仍会让 NuRec 相机做离屏渲染，
 # 显著拖低 RTF。这里在 stage 加载后显式停图并停用所有 render product；
@@ -93,9 +124,13 @@ if not _viewport:
     from pxr import UsdRender  # noqa: E402
 
     _stage = omni.usd.get_context().get_stage()
-    _camera_graph = _stage.GetPrimAtPath("/ActionGraph_camera")
-    if _camera_graph.IsValid():
-        _camera_graph.GetAttribute("evaluationMode").Set("Disabled")
+    for _cam_graph_path in ("/ActionGraph_camera", "/ActionGraph_camera_go2"):
+        _camera_graph = _stage.GetPrimAtPath(_cam_graph_path)
+        if _camera_graph.IsValid():
+            try:
+                _camera_graph.GetAttribute("evaluationMode").Set("Disabled")
+            except Exception:
+                _camera_graph.SetActive(False)
     _render_products = [p for p in _stage.Traverse() if p.IsA(UsdRender.Product)]
     for _rp in _render_products:
         _rp.SetActive(False)
@@ -120,28 +155,44 @@ PHYS_DT = 1.0 / PHYS_HZ
 # 在 initialize_physics() 重新注册传感器【之前】设置，否则 PhysX 插件会缓存旧的
 # rotationRate(场景里烘焙的 20Hz)，运行中改属性只能部分生效。记录原值仅用于打印日志；
 # schema 明确定义 rotationRate=0 为“all rays at once”，即每次读取生成完整一圈。
-LIDAR_PRIM = "/World/r1_pro_with_gripper/base_link/livox_frame"
-_lidar_prim = omni.usd.get_context().get_stage().GetPrimAtPath(LIDAR_PRIM)
-_lidar_rot_rate = float(_lidar_prim.GetAttribute("rotationRate").Get() or 20.0)
-_lidar_full_scan = _os.environ.get("ISAAC_LIDAR_FULL_SCAN", "1").strip().lower() \
-    not in ("0", "false", "no", "off")
-if _lidar_full_scan:
-    _lidar_prim.GetAttribute("rotationRate").Set(0.0)
-# 雷达角分辨率(度)。默认 0=不改(用 USD 里的 0.4°/1.0° ≈ 53k 点)。点数 = (360/H)×(59/V)。
-# 点太多会拖累 WLAN 传输 + 下游 pc2_to_livox 的逐点转换(它是 O(点数) 的 Python 循环) ->
-# /livox/lidar 掉频。建议 ISAAC_LIDAR_HRES=0.8 ISAAC_LIDAR_VRES=1.5 -> ~18k 点(接近真机 Mid360)。
-_lidar_hres = float(_os.environ.get("ISAAC_LIDAR_HRES", "0.8"))
-_lidar_vres = float(_os.environ.get("ISAAC_LIDAR_VRES", "1.5"))
-if _lidar_hres > 0:
-    _lidar_prim.GetAttribute("horizontalResolution").Set(_lidar_hres)
-if _lidar_vres > 0:
-    _lidar_prim.GetAttribute("verticalResolution").Set(_lidar_vres)
-if _lidar_hres > 0 or _lidar_vres > 0:
-    _h = _lidar_hres or 0.4
-    _v = _lidar_vres or 1.0
-    print(f"[headless] 雷达分辨率 H={_h:g}° V={_v:g}° -> 约 {int(360 / _h) * int(59 / _v)} 点/帧 "
-          f"(ISAAC_LIDAR_HRES/VRES) —— 减 WLAN 带宽和下游转换负担。")
+_LIDAR_CANDIDATES = (
+    "/World/go2/base/livox_frame",
+    "/World/r1_pro_with_gripper/base_link/livox_frame",
+)
 _stage = omni.usd.get_context().get_stage()
+LIDAR_PRIM = None
+_lidar_prim = None
+for _cand in _LIDAR_CANDIDATES:
+    _p = _stage.GetPrimAtPath(_cand)
+    if _p.IsValid() and _p.GetAttribute("rotationRate"):
+        LIDAR_PRIM = _cand
+        _lidar_prim = _p
+        break
+if _lidar_prim is None:
+    print("[headless] WARN: 未找到 livox_frame，跳过雷达分辨率调参（Go2 需先 setup_sensors_go2）")
+    _lidar_rot_rate = 20.0
+    _lidar_full_scan = False
+else:
+    print(f"[headless] lidar prim: {LIDAR_PRIM}")
+    _lidar_rot_rate = float(_lidar_prim.GetAttribute("rotationRate").Get() or 20.0)
+    _lidar_full_scan = _os.environ.get("ISAAC_LIDAR_FULL_SCAN", "1").strip().lower() \
+        not in ("0", "false", "no", "off")
+    if _lidar_full_scan:
+        _lidar_prim.GetAttribute("rotationRate").Set(0.0)
+    # 雷达角分辨率(度)。默认 0=不改(用 USD 里的 0.4°/1.0° ≈ 53k 点)。点数 = (360/H)×(59/V)。
+    # 点太多会拖累 WLAN 传输 + 下游 pc2_to_livox 的逐点转换(它是 O(点数) 的 Python 循环) ->
+    # /livox/lidar 掉频。建议 ISAAC_LIDAR_HRES=0.8 ISAAC_LIDAR_VRES=1.5 -> ~18k 点(接近真机 Mid360)。
+    _lidar_hres = float(_os.environ.get("ISAAC_LIDAR_HRES", "0.8"))
+    _lidar_vres = float(_os.environ.get("ISAAC_LIDAR_VRES", "1.5"))
+    if _lidar_hres > 0:
+        _lidar_prim.GetAttribute("horizontalResolution").Set(_lidar_hres)
+    if _lidar_vres > 0:
+        _lidar_prim.GetAttribute("verticalResolution").Set(_lidar_vres)
+    if _lidar_hres > 0 or _lidar_vres > 0:
+        _h = _lidar_hres or 0.4
+        _v = _lidar_vres or 1.0
+        print(f"[headless] 雷达分辨率 H={_h:g}° V={_v:g}° -> 约 {int(360 / _h) * int(59 / _v)} 点/帧 "
+              f"(ISAAC_LIDAR_HRES/VRES) —— 减 WLAN 带宽和下游转换负担。")
 _lidar_gate = _stage.GetPrimAtPath("/ActionGraph_lidar_go2/Gate")
 if not _lidar_gate.IsValid():
     _lidar_gate = _stage.GetPrimAtPath("/ActionGraph_lidar/Gate")

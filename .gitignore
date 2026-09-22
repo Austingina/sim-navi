@@ -59,3 +59,6 @@ build/
 
 # ===== third_party =====
 third_party/**/.cache/
+
+# ===== 本地运行日志 =====
+/logs/

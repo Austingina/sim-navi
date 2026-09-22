@@ -38,6 +38,7 @@ def generate_launch_description():
     with_gps_map_tf = LaunchConfiguration("with_gps_map_tf")
     with_odom_tf = LaunchConfiguration("with_odom_tf")
     with_go2_bridge = LaunchConfiguration("with_go2_bridge")
+    with_camera_tf = LaunchConfiguration("with_camera_tf")
     georef_json = LaunchConfiguration("georef_json")
 
     default_georef = os.path.normpath(
@@ -64,8 +65,32 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "with_go2_bridge", default_value="false",
             description="是否启动 go2_topic_bridge（仅当 odom 在 /unitree_go2/* 命名空间时）"),
+        DeclareLaunchArgument(
+            "with_camera_tf", default_value="true",
+            description="发布 base_link→zed_link→zed_camera 静态 TF（对齐 setup_sensors_go2 挂载）"),
         DeclareLaunchArgument("georef_json", default_value=default_georef),
 
+        # 安装点与 base 同姿态；zed_camera 为光学系（+Z 前、+X 右、+Y 下），对齐正立画面
+        ExecuteProcess(
+            condition=IfCondition(with_camera_tf),
+            cmd=[
+                "ros2", "run", "tf2_ros", "static_transform_publisher",
+                "--x", "0.32", "--y", "0", "--z", "0.12",
+                "--qx", "0", "--qy", "0", "--qz", "0", "--qw", "1",
+                "--frame-id", "base_link", "--child-frame-id", "zed_link",
+            ],
+            output="log",
+        ),
+        ExecuteProcess(
+            condition=IfCondition(with_camera_tf),
+            cmd=[
+                "ros2", "run", "tf2_ros", "static_transform_publisher",
+                "--x", "0", "--y", "0", "--z", "0",
+                "--qx", "-0.5", "--qy", "0.5", "--qz", "-0.5", "--qw", "0.5",
+                "--frame-id", "zed_link", "--child-frame-id", "zed_camera",
+            ],
+            output="log",
+        ),
         ExecuteProcess(
             condition=IfCondition(with_odom_tf),
             cmd=[PYTHON3, os.path.join(HERE, "odom_tf_publisher.py"),

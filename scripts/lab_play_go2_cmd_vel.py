@@ -31,6 +31,8 @@ import os
 import sys
 import time
 
+import numpy as np
+
 # ---------------------------------------------------------------------------
 # AppLauncher 必须先于其它 isaac 导入（与 unitree_rl_lab/scripts/rsl_rl/play.py 相同）
 # ---------------------------------------------------------------------------
@@ -62,6 +64,24 @@ parser.add_argument("--real-time", action="store_true", default=False)
 parser.add_argument("--cmd_vel_topic", type=str, default="/cmd_vel")
 parser.add_argument("--cmd_timeout", type=float, default=0.5,
                     help="无新 /cmd_vel 超过该秒数则指令清零（安全）")
+parser.add_argument(
+    "--campus_terrain",
+    action="store_true",
+    default=False,
+    help="阶段 B：用地图大学城 collision USD 替换 Lab generator 地形",
+)
+parser.add_argument(
+    "--campus_usd",
+    type=str,
+    default="",
+    help="大学城 collision USD/USDZ 路径；空则用仓库 assets/daxuecheng/daxuecheng-collision-smooth.usdz",
+)
+parser.add_argument(
+    "--campus_init_xyz",
+    type=str,
+    default="0,2,-0.014",
+    help="校园地形上 spawn 的 x,y,z（默认平坦路段；地面≈-0.41 + 站高0.4）",
+)
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -94,14 +114,14 @@ from unitree_rl_lab.utils.parser_cfg import parse_env_cfg  # noqa: E402
 try:
     import rclpy
     from geometry_msgs.msg import Twist
-except ImportError as e:
-    raise SystemExit(
-        "需要 rclpy。请先 source /opt/ros/humble/setup.bash 再用 Isaac Lab 的 python 跑本脚本。"
-    ) from e
+
+    _HAS_RCLPY = True
+except ImportError:
+    _HAS_RCLPY = False
 
 
 class CmdVelBuffer:
-    """线程外：spin_once 更新；策略循环读取。"""
+    """订阅 `/cmd_vel`（机体 vx, vy, wz）。优先本进程 rclpy；否则用 /usr/bin/python3 中继。"""
 
     def __init__(self, topic: str, timeout: float) -> None:
         self.timeout = timeout
@@ -109,9 +129,14 @@ class CmdVelBuffer:
         self.vy = 0.0
         self.wz = 0.0
         self._stamp = 0.0
-        self.node = rclpy.create_node("lab_go2_cmd_vel")
-        self.node.create_subscription(Twist, topic, self._on_cmd, 10)
-        self.node.get_logger().info(f"订阅 {topic} → Lab base_velocity 指令")
+        self._proc = None
+        self.node = None
+        if _HAS_RCLPY:
+            self.node = rclpy.create_node("lab_go2_cmd_vel")
+            self.node.create_subscription(Twist, topic, self._on_cmd, 10)
+            self.node.get_logger().info(f"订阅 {topic} → Lab base_velocity（本进程 rclpy）")
+        else:
+            self._start_relay(topic)
 
     def _on_cmd(self, msg: Twist) -> None:
         self.vx = float(msg.linear.x)
@@ -119,13 +144,114 @@ class CmdVelBuffer:
         self.wz = float(msg.angular.z)
         self._stamp = time.time()
 
+    def _start_relay(self, topic: str) -> None:
+        """Lab Python 3.12 通常无 Humble rclpy，用系统 3.10 子进程中继。"""
+        import subprocess
+        import threading
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        repo = os.path.dirname(script_dir)
+        dds_xml = os.path.join(repo, "cyclonedds_localhost.xml")
+        py_relay = os.path.join(script_dir, "_cmd_vel_relay_helper.py")
+
+        bash = f"""
+set -e
+# 隔离 Isaac/conda 的 PYTHONPATH，避免 Humble 的 /usr/bin/python3 出现 SRE mismatch
+env -i \
+  HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" \
+  PATH=/usr/bin:/bin \
+  RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+  ROS_DOMAIN_ID=7 \
+  ROS_LOCALHOST_ONLY=1 \
+  CYCLONEDDS_URI=file://{dds_xml} \
+  /bin/bash -lc 'source /opt/ros/humble/setup.bash && exec /usr/bin/python3 {py_relay} {topic}'
+"""
+        self._proc = subprocess.Popen(
+            ["/bin/bash", "-lc", bash],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env={
+                "HOME": os.path.expanduser("~"),
+                "USER": os.environ.get("USER", ""),
+                "LOGNAME": os.environ.get("LOGNAME", ""),
+                "PATH": "/usr/bin:/bin",
+            },
+        )
+
+        def _reader() -> None:
+            assert self._proc and self._proc.stdout
+            for line in self._proc.stdout:
+                line = line.strip()
+                if line.startswith("CMD "):
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        self.vx = float(parts[1])
+                        self.vy = float(parts[2])
+                        self.wz = float(parts[3])
+                        self._stamp = float(parts[4])
+                elif line:
+                    print(f"[cmd_relay] {line}", flush=True)
+
+        threading.Thread(target=_reader, daemon=True).start()
+        print(f"[INFO] 无本进程 rclpy，已启动 /usr/bin/python3 中继订阅 {topic}", flush=True)
+
     def read(self) -> tuple[float, float, float]:
         if time.time() - self._stamp > self.timeout:
             return 0.0, 0.0, 0.0
         return self.vx, self.vy, self.wz
 
     def spin_once(self) -> None:
-        rclpy.spin_once(self.node, timeout_sec=0.0)
+        if self.node is not None and _HAS_RCLPY:
+            rclpy.spin_once(self.node, timeout_sec=0.0)
+
+    def shutdown(self) -> None:
+        if self.node is not None and _HAS_RCLPY:
+            self.node.destroy_node()
+        if self._proc is not None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=2)
+            except Exception:
+                self._proc.kill()
+
+
+def _apply_campus_terrain(env_cfg) -> str:
+    """阶段 B：Lab 地形换成大学城 collision；关闭 terrain curriculum。"""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    usd = args_cli.campus_usd.strip() or os.path.join(
+        repo, "assets", "daxuecheng", "daxuecheng-collision-smooth.usdz"
+    )
+    usd = os.path.abspath(os.path.expanduser(usd))
+    if not os.path.isfile(usd):
+        raise FileNotFoundError(f"campus USD 不存在: {usd}")
+
+    xyz = [float(x) for x in args_cli.campus_init_xyz.split(",")]
+    if len(xyz) != 3:
+        raise ValueError("--campus_init_xyz 需要 x,y,z 三个数")
+
+    env_cfg.scene.terrain.terrain_type = "usd"
+    env_cfg.scene.terrain.usd_path = usd
+    env_cfg.scene.terrain.terrain_generator = None
+    env_cfg.scene.terrain.max_init_terrain_level = None
+    # usd 地形用网格 origins，必须有 env_spacing
+    if getattr(env_cfg.scene.terrain, "env_spacing", None) is None:
+        env_cfg.scene.terrain.env_spacing = float(getattr(env_cfg.scene, "env_spacing", 5.0) or 5.0)
+    env_cfg.curriculum.terrain_levels = None
+    env_cfg.scene.robot.init_state.pos = (xyz[0], xyz[1], xyz[2])
+    # 缩小 reset 漂移，避免随机扔到建筑上
+    env_cfg.events.reset_base.params["pose_range"] = {
+        "x": (-0.2, 0.2),
+        "y": (-0.2, 0.2),
+        "yaw": (-0.3, 0.3),
+    }
+    print(
+        f"[campus] terrain_type=usd usd={usd} init_xyz={tuple(xyz)} "
+        f"terrain_levels=None",
+        flush=True,
+    )
+    return usd
 
 
 def main() -> None:
@@ -139,6 +265,8 @@ def main() -> None:
     # 关闭随机指令 / 站立样本，改由 /cmd_vel 驱动
     env_cfg.commands.base_velocity.resampling_time_range = (1.0e9, 1.0e9)
     env_cfg.commands.base_velocity.rel_standing_envs = 0.0
+    if args_cli.campus_terrain:
+        _apply_campus_terrain(env_cfg)
 
     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
@@ -163,7 +291,8 @@ def main() -> None:
     runner.load(resume_path)
     policy = runner.get_inference_policy(device=env.unwrapped.device)
 
-    rclpy.init(args=None)
+    if _HAS_RCLPY:
+        rclpy.init(args=None)
     cmd = CmdVelBuffer(args_cli.cmd_vel_topic, args_cli.cmd_timeout)
     dt = env.unwrapped.step_dt
     obs = env.get_observations()
@@ -178,31 +307,51 @@ def main() -> None:
         term.vel_command_b[:, 0] = vx
         term.vel_command_b[:, 1] = vy
         term.vel_command_b[:, 2] = wz
-        # 站立掩码清零（若实现存在）
         if hasattr(term, "is_standing_env"):
             term.is_standing_env[:] = False
 
-        # 用最新指令重算观测，再推理
-        raw = env.unwrapped.observation_manager.compute()
-        if isinstance(raw, dict):
-            obs = raw["policy"] if "policy" in raw else next(iter(raw.values()))
-        else:
-            obs = raw
-
+        # 必须用 wrapper.get_observations()（TensorDict），勿直接 observation_manager.compute()
+        # 否则 rsl-rl 5 MLPModel 会 IndexError: too many indices for tensor of dimension 2
         with torch.inference_mode():
+            obs = env.get_observations()
             actions = policy(obs)
             obs, _, _, _ = env.step(actions)
 
         if step_i % 50 == 0:
-            print(f"[cmd_vel] vx={vx:.2f} vy={vy:.2f} wz={wz:.2f}")
+            try:
+                robot = env.unwrapped.scene["robot"]
+                root = robot.data.root_pos_w[0].detach().cpu().numpy()
+                ang = robot.data.root_ang_vel_b[0].detach().cpu().numpy()
+                # 机身抖动代理：过大则行走时雷达易叠影 / 平地误判
+                ang_xy = float((ang[0] ** 2 + ang[1] ** 2) ** 0.5)
+                extra = f" ang_xy={ang_xy:.3f}"
+                try:
+                    hs = env.unwrapped.scene["height_scanner"]
+                    # RayCaster 高度相对值；方差大 = 地面「台阶」假象风险
+                    h = hs.data.ray_hits_w[..., 2]
+                    if h is not None and h.numel() > 0:
+                        hv = h[0].detach().cpu().numpy()
+                        hv = hv[np.isfinite(hv)]
+                        if hv.size:
+                            extra += f" hscan_std={float(hv.std()):.3f}"
+                except Exception:
+                    pass
+                print(
+                    f"[cmd_vel] vx={vx:.2f} vy={vy:.2f} wz={wz:.2f}  "
+                    f"pos=({root[0]:.2f},{root[1]:.2f},{root[2]:.2f}){extra}",
+                    flush=True,
+                )
+            except Exception:
+                print(f"[cmd_vel] vx={vx:.2f} vy={vy:.2f} wz={wz:.2f}", flush=True)
         step_i += 1
 
         sleep_t = dt - (time.time() - t0)
         if args_cli.real_time and sleep_t > 0:
             time.sleep(sleep_t)
 
-    cmd.node.destroy_node()
-    rclpy.shutdown()
+    cmd.shutdown()
+    if _HAS_RCLPY:
+        rclpy.shutdown()
     env.close()
 
 

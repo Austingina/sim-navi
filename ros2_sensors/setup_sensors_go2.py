@@ -10,15 +10,17 @@
   - 机器人 prim：/World/go2 ，articulation 根：/World/go2/base
   - ActionGraph 使用 *_go2 路径，避开 scene_seg_smooth 子层同名图冲突
   - IMU 用 IsaacImuSensor.Define（不依赖易未注册的 IsaacSensorCreateImuSensor 命令）
-  - 默认无 ZED；Mid360 挂狗背
+  - Mid360 挂狗背；**默认挂前置相机**（话题与 r1 对齐：/zed/rgb/image_raw，便于 outdoor.rviz）
 
 会发布：/clock /joint_states /odom_gt /tf /tf_static /livox/lidar_raw /livox/imu
+       /zed/rgb/image_raw /zed/camera_info（需渲染：GUI 或 ISAAC_VIEWPORT=1）
 再配 bringup_go2.launch.py → /livox/points + /livox/lidar + /gps/fix
 """
+import math
 import omni.kit.app
 import omni.kit.commands
 import omni.usd
-from pxr import Sdf, Gf, Usd, UsdGeom
+from pxr import Sdf, Gf, Usd, UsdGeom, UsdLux
 import omni.graph.core as og
 from isaacsim.core.utils.extensions import enable_extension
 
@@ -27,6 +29,15 @@ ROBOT_PRIM = "/World/go2"
 BASE_LINK = ROBOT_PRIM + "/base"
 LIDAR_PRIM = BASE_LINK + "/livox_frame"
 IMU_PRIM = BASE_LINK + "/imu_livox"
+# 官方 Go2 无 zed_link：自建光学挂载点，话题仍用 /zed/* 以兼容 outdoor.rviz
+ZED_LINK = BASE_LINK + "/zed_link"
+CAMERA_PRIM = ZED_LINK + "/zed_camera"
+CAM_OFFSET = (0.32, 0.0, 0.12)  # 大致狗头前方
+CAM_W, CAM_H = 640, 360
+CAM_HFOV_DEG = 90.0
+ENABLE_RGB = True
+ENABLE_DEPTH = False
+CAM_FRAME_SKIP = 5  # tick 抽帧；实际约 1/(skip+1)
 
 LIDAR_OFFSET = (0.20, 0.0, 0.28)
 LIDAR_MIN_RANGE = 0.15
@@ -43,6 +54,7 @@ PUBLISH_ODOM_TF = False
 GRAPH_ROBOT = "/ActionGraph_robot_go2"
 GRAPH_LIDAR = "/ActionGraph_lidar_go2"
 GRAPH_IMU = "/ActionGraph_imu_go2"
+GRAPH_CAMERA = "/ActionGraph_camera_go2"
 # =====================================================
 
 
@@ -115,6 +127,67 @@ def _create_imu(stage) -> bool:
     return True
 
 
+def _clear_xform_ops(prim) -> None:
+    xf = UsdGeom.Xformable(prim)
+    xf.ClearXformOpOrder()
+    for name in list(prim.GetPropertyNames()):
+        if name.startswith("xformOp:"):
+            prim.RemoveProperty(name)
+
+
+def _create_camera(stage) -> bool:
+    """前置相机：视线沿 base +X，画面上方向 base +Z。
+
+    USD 相机看本地 -Z、+Y 为像上，且变换是行向量（p' = p * M）。
+    直接写已核对的四元数，避免欧拉乘序把视线转到 +Y、画面横滚 90°。
+    """
+    for name in ("zed_link", "zed_camera", "zed_rgbd", "front_camera"):
+        p = stage.GetPrimAtPath(BASE_LINK + "/" + name)
+        if p.IsValid():
+            stage.RemovePrim(p.GetPath())
+
+    # zed_link 只做安装点（与 base 同姿态），光学系由 bringup 静态 TF 发布
+    zed = UsdGeom.Xform.Define(stage, Sdf.Path(ZED_LINK))
+    _clear_xform_ops(zed.GetPrim())
+    UsdGeom.Xformable(zed).AddTranslateOp(UsdGeom.XformOp.PrecisionDouble).Set(
+        Gf.Vec3d(*CAM_OFFSET)
+    )
+
+    cam = UsdGeom.Camera.Define(stage, Sdf.Path(CAMERA_PRIM))
+    cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 50.0))
+    focal = 24.0
+    h_aperture = 2.0 * focal * math.tan(math.radians(CAM_HFOV_DEG) / 2.0)
+    cam.CreateFocalLengthAttr(focal)
+    cam.CreateHorizontalApertureAttr(h_aperture)
+    cam.CreateVerticalApertureAttr(h_aperture * CAM_H / CAM_W)
+
+    # 行向量下：local X=-Y_base（右），Y=+Z_base（上），Z=-X_base（视线 -Z = +X 前）
+    _clear_xform_ops(cam.GetPrim())
+    UsdGeom.Xformable(cam).AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(
+        Gf.Quatd(0.5, 0.5, -0.5, -0.5)
+    )
+    print("[OK] camera forward+upright:", CAMERA_PRIM, "offset=", CAM_OFFSET)
+    return True
+
+
+def _create_sky(stage) -> None:
+    """穹顶光当天空。大学城只有地面/建筑，射线打空就是黑，不是缺一块网格。"""
+    path = "/World/sky"
+    prim = stage.GetPrimAtPath(path)
+    if prim.IsValid() and prim.GetTypeName() != "DomeLight":
+        stage.RemovePrim(path)
+        prim = None
+    light = UsdLux.DomeLight.Define(stage, path)
+    light.CreateIntensityAttr(800.0)
+    light.CreateColorAttr(Gf.Vec3f(0.45, 0.65, 1.0))
+    try:
+        import carb
+        carb.settings.get_settings().set("/rtx/background/source/type", "domeLight")
+    except Exception as e:
+        print("[WARN] 未能把 RTX 背景切到 domeLight:", e)
+    print("[OK] sky dome:", path)
+
+
 def setup():
     enable_extension("isaacsim.ros2.bridge")
     enable_extension("isaacsim.sensors.physics")
@@ -136,10 +209,16 @@ def setup():
         "/ActionGraph_camera",
     ))
     # 删掉本脚本上次创建的 go2 专用图
-    for g in (GRAPH_ROBOT, GRAPH_LIDAR, GRAPH_IMU):
+    for g in (GRAPH_ROBOT, GRAPH_LIDAR, GRAPH_IMU, GRAPH_CAMERA):
         _remove_if_local(stage, g)
 
-    print("[skip] Go2 默认无 ZED/相机图")
+    # ---------- 相机 ----------
+    cam_ok = False
+    if ENABLE_RGB or ENABLE_DEPTH:
+        cam_ok = _create_camera(stage)
+        _create_sky(stage)
+    else:
+        print("[skip] Go2 相机关闭（ENABLE_RGB=ENABLE_DEPTH=False）")
 
     # ---------- IMU ----------
     if not _create_imu(stage):
@@ -184,6 +263,8 @@ def setup():
         ("PubTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
         ("PubSensorTF", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
     ]
+    sensor_targets = [Sdf.Path(lidar_path), Sdf.Path(IMU_PRIM)]
+    # 注意：zed_link 是普通 Xform，PoseTree 会报 eInvalid；相机 TF 用 RawTransform 手发
     robot_values = [
         ("PubJoint.inputs:topicName", "/joint_states"),
         ("PubJoint.inputs:targetPrim", [Sdf.Path(BASE_LINK)]),
@@ -197,8 +278,7 @@ def setup():
         ("PubSensorTF.inputs:topicName", "/tf_static"),
         ("PubSensorTF.inputs:staticPublisher", True),
         ("PubSensorTF.inputs:parentPrim", Sdf.Path(BASE_LINK)),
-        ("PubSensorTF.inputs:targetPrims",
-         [Sdf.Path(lidar_path), Sdf.Path(IMU_PRIM)]),
+        ("PubSensorTF.inputs:targetPrims", sensor_targets),
     ]
     robot_connects = [
         ("Tick.outputs:tick", "Gate.inputs:execIn"),
@@ -220,6 +300,11 @@ def setup():
         ("Ctx.outputs:context", "PubTF.inputs:context"),
         ("Ctx.outputs:context", "PubSensorTF.inputs:context"),
     ]
+    if cam_ok:
+        # zed_link 是普通 Xform，PoseTree 会 eInvalid；静态 TF 改由 bringup_go2
+        # （tf2_ros static_transform_publisher，QoS 正确）发布 base_link→zed_link→zed_camera
+        print("[note] 相机 TF 请用 bringup_go2（static_transform_publisher），"
+              "勿依赖 PoseTree")
     if PUBLISH_ODOM_TF:
         robot_nodes.append(
             ("PubRawTF", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"))
@@ -309,7 +394,80 @@ def setup():
         },
     )
     print("[OK] IMU+/clock graph:", GRAPH_IMU)
-    print("\nDone (Go2). Play 后应有: /clock /odom_gt /livox/lidar_raw /livox/imu")
+
+    # ---------- 相机 RGB / camera_info ----------
+    if not cam_ok:
+        print("[skip] camera graph（无相机 prim）")
+    else:
+        cam_nodes = [
+            ("Tick", "omni.graph.action.OnPlaybackTick"),
+            ("Ctx", "isaacsim.ros2.bridge.ROS2Context"),
+            ("RP", "isaacsim.core.nodes.IsaacCreateRenderProduct"),
+            ("Info", "isaacsim.ros2.bridge.ROS2CameraInfoHelper"),
+        ]
+        cam_values = [
+            ("RP.inputs:cameraPrim", [Sdf.Path(CAMERA_PRIM)]),
+            ("RP.inputs:width", CAM_W),
+            ("RP.inputs:height", CAM_H),
+            ("Info.inputs:topicName", "/zed/camera_info"),
+            ("Info.inputs:frameId", "zed_camera"),
+            ("Info.inputs:frameSkipCount", CAM_FRAME_SKIP),
+        ]
+        cam_connect = [
+            ("Tick.outputs:tick", "RP.inputs:execIn"),
+            ("RP.outputs:execOut", "Info.inputs:execIn"),
+            ("RP.outputs:renderProductPath", "Info.inputs:renderProductPath"),
+            ("Ctx.outputs:context", "Info.inputs:context"),
+        ]
+        if ENABLE_RGB:
+            cam_nodes.append(("Rgb", "isaacsim.ros2.bridge.ROS2CameraHelper"))
+            cam_values += [
+                ("Rgb.inputs:type", "rgb"),
+                ("Rgb.inputs:topicName", "/zed/rgb/image_raw"),
+                ("Rgb.inputs:frameId", "zed_camera"),
+                ("Rgb.inputs:frameSkipCount", CAM_FRAME_SKIP),
+            ]
+            cam_connect += [
+                ("RP.outputs:execOut", "Rgb.inputs:execIn"),
+                ("RP.outputs:renderProductPath", "Rgb.inputs:renderProductPath"),
+                ("Ctx.outputs:context", "Rgb.inputs:context"),
+            ]
+        if ENABLE_DEPTH:
+            cam_nodes.append(("Depth", "isaacsim.ros2.bridge.ROS2CameraHelper"))
+            cam_values += [
+                ("Depth.inputs:type", "depth"),
+                ("Depth.inputs:topicName", "/zed/depth/image_rect_raw"),
+                ("Depth.inputs:frameId", "zed_camera"),
+                ("Depth.inputs:frameSkipCount", CAM_FRAME_SKIP),
+            ]
+            cam_connect += [
+                ("RP.outputs:execOut", "Depth.inputs:execIn"),
+                ("RP.outputs:renderProductPath", "Depth.inputs:renderProductPath"),
+                ("Ctx.outputs:context", "Depth.inputs:context"),
+            ]
+        og.Controller.edit(
+            {"graph_path": GRAPH_CAMERA, "evaluator_name": "execution"},
+            {
+                og.Controller.Keys.CREATE_NODES: cam_nodes,
+                og.Controller.Keys.SET_VALUES: cam_values,
+                og.Controller.Keys.CONNECT: cam_connect,
+            },
+        )
+        print(
+            "[OK] camera graph:", GRAPH_CAMERA,
+            "(rgb=%s depth=%s frameSkip=%d -> 1/%d ticks)"
+            % (ENABLE_RGB, ENABLE_DEPTH, CAM_FRAME_SKIP, CAM_FRAME_SKIP + 1),
+        )
+
+    cam_topics = ""
+    if cam_ok and ENABLE_RGB:
+        cam_topics += " /zed/rgb/image_raw"
+    if cam_ok and ENABLE_DEPTH:
+        cam_topics += " /zed/depth/image_rect_raw"
+    if cam_ok and (ENABLE_RGB or ENABLE_DEPTH):
+        cam_topics += " /zed/camera_info"
+    print("\nDone (Go2). Play 后应有: /clock /odom_gt /livox/lidar_raw /livox/imu" + cam_topics)
+    print("相机需渲染：GUI 或 headless 设 ISAAC_VIEWPORT=1")
     print("再: ros2 launch ros2_sensors/bringup_go2.launch.py")
 
 
