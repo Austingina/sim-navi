@@ -23,6 +23,56 @@
 
 ## 最短成功路径
 
+一键拉起（四个窗口：策略、bringup、室外栈、RViz）：
+
+```bash
+cd ~/navi-sim-code-backups/slam-nav-20260901T135838+0800
+./scripts/run_go2_rviz_stack.sh
+```
+
+要在拉起之后进入交互式定路线，加上 `--route`。后面的名字是默认路线名，省略则是 `route_01`：
+
+```bash
+./scripts/run_go2_rviz_stack.sh --route
+./scripts/run_go2_rviz_stack.sh --route 北广场一圈
+```
+
+已经在跑的那一项会跳过，不会再开一份 Isaac。菜单里怎么确认语义点见下文「语义点串成路线」。
+
+只重启室外导航栈（策略、bringup、RViz 不动）：
+
+```bash
+./scripts/run_go2_rviz_stack.sh --nav
+```
+
+查询航向是不是 locked（是则退出码 0）：
+
+```bash
+./scripts/run_go2_rviz_stack.sh --heading
+```
+
+键盘移动。导航栈在跑时发到 `/cmd_vel_smoothed`；没在跑时直接发 `/cmd_vel`。`i` 前进，`,` 后退，`j`/`l` 转向，`k` 或空格停下：
+
+```bash
+./scripts/run_go2_rviz_stack.sh --keyboard
+```
+
+翻倒后只要这一条。它不重启 Isaac、不重启导航，仿真时间不会回零，`map → base_link` 保持连接，狗留在摔倒的位置被摆正。正在走的目标和语义路线会被取消，避免刚站起来又被带走：
+
+```bash
+./scripts/run_go2_rviz_stack.sh --standup
+```
+
+终端 1 必须已经是带「扶正=SIGUSR2」的那次策略。摔倒之后不要再 Ctrl+C 终端 1：重启策略会把仿真时间打回 0，RViz 里的狗就会从地图上消失。
+
+回到场景出生点并站好：
+
+```bash
+./scripts/run_go2_rviz_stack.sh --origin
+```
+
+手开四个终端时：
+
 1. 四个终端：策略 Isaac → `bringup_go2` → outdoor（Go2 yaml）→ RViz
 2. 终端 3 出现 `Managed nodes are active`，再等到日志 **`heading LOCKED`**
 3. RViz **只用「2D Goal Pose」**，目标在路上且距当前 **>20 m**
@@ -142,6 +192,41 @@ ros2 topic hz /cmd_vel
 终端 1 的 `[cmd_vel] vx=` 应离开 0（上限 0.8）。狗会走得比轮式慢，中间停一下可以接受；长时间趴地或 `vx` 一直为 0 则没跟上。
 
 有红线 `/campus_path` 不等于在走，必须有 `/plan` + `/cmd_vel_nav`。
+
+### 语义点串成路线再整段发出去
+
+`./scripts/run_go2_rviz_stack.sh --route [路线名]` 拉起四个终端后停在路线菜单里。先确认路线名（直接回车则用参数里的名字，默认 `route_01`）。RViz 用 **2D Goal Pose** 把狗走到位置，终端 3 出现 `Campus route complete` 后，在菜单里输入语义点名字即可确认。黄球话题 `/semantic_route_markers`（已写入 `outdoor.rviz`；脚本拉起前就开着的 RViz 要重开）。
+
+菜单里也可以不走脚本、直接发话题：
+
+1. `heading` = **locked**
+2. **2D Goal Pose** 让狗走到要记的位置，日志出现 `Campus route complete` 后再确认
+3. 确认当前位置为一个语义点（可重复，按点击顺序串联）：
+
+```bash
+source ~/navi-sim-code-backups/slam-nav-20260901T135838+0800/setup_ros_local.sh
+ros2 topic pub --once /semantic_route_cmd std_msgs/msg/String "{data: 'mark 北门口'}"
+ros2 topic pub --once /semantic_route_cmd std_msgs/msg/String "{data: list}"
+```
+
+4. 至少两个点后保存，再整段发出去。狗会按顺序沿路网走到每个点：
+
+```bash
+ros2 topic pub --once /semantic_route_cmd std_msgs/msg/String "{data: 'save route_01'}"
+ros2 topic pub --once /semantic_route_cmd std_msgs/msg/String "{data: 'run route_01'}"
+```
+
+| 命令 | 作用 |
+|---|---|
+| `mark 名字` | 把狗当前站的位置收成语义点，接到路线末尾。不写名字则是 `p1`、`p2` |
+| `undo` / `clear` | 去掉最后一点 / 清空 |
+| `list` | 终端 3 打印当前点序 |
+| `save 名字` | 写到 `campus_nav/semantic_routes/<名字>.json` |
+| `run` | 发当前内存里的路线 |
+| `run 名字` | 读文件再发 |
+| `stop` | 停下，点还留着 |
+
+跑的过程中再点 **2D Goal Pose** 会暂停这条路线（点不丢），之后 `run` 从头再发。状态可看 `ros2 topic echo /semantic_route_status --once`。
 
 ### 误点了「Nav2 Goal」
 

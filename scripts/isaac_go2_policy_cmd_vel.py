@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -74,6 +75,11 @@ from isaacsim.core.utils.stage import is_stage_loading, open_stage  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction  # noqa: E402
 
 ROBOT_PRIM = "/World/go2/base"
+# 扶正时在当前高度上再抬这么多，避免肚子还埋在路面里。
+STANDUP_Z = float(os.environ.get("ISAAC_STANDUP_Z", "0.35"))
+POSE_PIDFILE = "/tmp/go2_policy_pose_ctl.pid"
+# 只在主循环里读。信号回调只许改这个字典。
+_pose_cmd = {"standup": False, "origin": False}
 
 # Lab 训练时 joint 顺序（与 deploy.yaml default_joint_pos 对齐）
 LAB_JOINT_ORDER = [
@@ -163,6 +169,42 @@ env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin \
                 self._proc.kill()
 
 
+def _on_pose_signal(signum, _frame) -> None:
+    if signum == signal.SIGUSR1:
+        _pose_cmd["origin"] = True
+    elif signum == signal.SIGUSR2:
+        _pose_cmd["standup"] = True
+
+
+def _yaw_of(q: np.ndarray) -> float:
+    w, x, y, z = (float(v) for v in q)
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    aw, ax, ay, az = (float(v) for v in a)
+    bw, bx, by, bz = (float(v) for v in b)
+    return np.array(
+        [
+            aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+        ],
+        dtype=np.float64,
+    )
+
+
+def _upright_like_spawn(current_q: np.ndarray, spawn_q: np.ndarray) -> np.ndarray:
+    """保留当前航向，滚转俯仰回到出生时的直立姿态。"""
+    dyaw = _yaw_of(current_q) - _yaw_of(spawn_q)
+    half = 0.5 * dyaw
+    yaw_q = np.array([math.cos(half), 0.0, 0.0, math.sin(half)], dtype=np.float64)
+    out = _quat_mul(yaw_q, np.asarray(spawn_q, dtype=np.float64))
+    n = float(np.linalg.norm(out))
+    return out if n < 1e-8 else out / n
+
+
 def load_deploy(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -231,6 +273,40 @@ def main() -> int:
     robot.set_joint_positions(targets_dof)
     robot.set_joint_velocities(zeros)
     controller.apply_action(ArticulationAction(joint_positions=targets_dof, joint_velocities=zeros))
+    stand_dof = targets_dof.copy()
+    spawn_pos, spawn_quat = robot.get_world_pose()
+    spawn_pos = np.asarray(spawn_pos, dtype=np.float64).copy()
+    spawn_quat = np.asarray(spawn_quat, dtype=np.float64).copy()
+
+    def place_robot(position: np.ndarray, orientation: np.ndarray, label: str) -> None:
+        nonlocal targets_dof, last_action
+        robot.set_world_pose(position=position, orientation=orientation)
+        try:
+            robot.set_linear_velocity(np.zeros(3, dtype=np.float64))
+            robot.set_angular_velocity(np.zeros(3, dtype=np.float64))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[{label}] 清速度失败: {exc}", flush=True)
+        robot.set_joint_positions(stand_dof)
+        robot.set_joint_velocities(zeros)
+        controller.apply_action(
+            ArticulationAction(joint_positions=stand_dof, joint_velocities=zeros)
+        )
+        targets_dof = stand_dof.copy()
+        last_action = np.zeros(12, dtype=np.float32)
+        print(
+            f"[{label}] pos=({position[0]:.2f},{position[1]:.2f},{position[2]:.2f})",
+            flush=True,
+        )
+
+    signal.signal(signal.SIGUSR1, _on_pose_signal)
+    signal.signal(signal.SIGUSR2, _on_pose_signal)
+    with open(POSE_PIDFILE, "w", encoding="utf-8") as pidf:
+        pidf.write(str(os.getpid()))
+    print(
+        f"[policy] 扶正=SIGUSR2 回原点=SIGUSR1 pid={os.getpid()} "
+        f"（{POSE_PIDFILE}）",
+        flush=True,
+    )
 
     device = torch.device(ARGS.device if torch.cuda.is_available() else "cpu")
     policy = torch.jit.load(ARGS.policy, map_location=device)
@@ -246,6 +322,16 @@ def main() -> int:
     step = 0
     try:
         while simulation_app.is_running():
+            if _pose_cmd["origin"]:
+                _pose_cmd["origin"] = False
+                place_robot(spawn_pos, spawn_quat, "origin")
+            elif _pose_cmd["standup"]:
+                _pose_cmd["standup"] = False
+                cur_pos, cur_quat = robot.get_world_pose()
+                cur_pos = np.asarray(cur_pos, dtype=np.float64)
+                lifted = cur_pos.copy()
+                lifted[2] = float(cur_pos[2]) + STANDUP_Z
+                place_robot(lifted, _upright_like_spawn(cur_quat, spawn_quat), "standup")
             vx, vy, wz = cmd.read()
             # physics substeps between policy updates
             for _ in range(decim):
@@ -303,6 +389,10 @@ def main() -> int:
         print("[policy] interrupted", flush=True)
     finally:
         cmd.close()
+        try:
+            os.remove(POSE_PIDFILE)
+        except OSError:
+            pass
     return 0
 
 
